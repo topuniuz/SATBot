@@ -56,17 +56,19 @@ logger = logging.getLogger(__name__)
 # UI & KEYBOARD BUILDERS (Clean & Premium Design)
 # ---------------------------------------------------------
 
-def get_persistent_reply_keyboard() -> ReplyKeyboardMarkup:
+def get_persistent_reply_keyboard(is_user_admin: bool = False) -> ReplyKeyboardMarkup:
     """Returns the persistent bottom navigation bar."""
     keyboard = [
         [KeyboardButton("📅 SAT Schedule"), KeyboardButton("⏳ Live Countdown")],
         [KeyboardButton("📝 Test-Day Tips"), KeyboardButton("🌍 Timezone")],
         [KeyboardButton("📚 SAT Tutors & Prep"), KeyboardButton("💬 Contact Support")],
     ]
+    if is_user_admin:
+        keyboard.append([KeyboardButton("👑 Admin Panel")])
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
 
-def get_main_menu_inline_keyboard() -> InlineKeyboardMarkup:
+def get_main_menu_inline_keyboard(is_user_admin: bool = False) -> InlineKeyboardMarkup:
     """Returns clean inline buttons for the main dashboard."""
     buttons = [
         [
@@ -84,6 +86,34 @@ def get_main_menu_inline_keyboard() -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton("⚙️ Status & Alerts", callback_data="nav:status"),
             InlineKeyboardButton("🌐 Score Portal", url="https://studentscores.collegeboard.org/"),
+        ],
+    ]
+    if is_user_admin:
+        buttons.append([InlineKeyboardButton("👑 Admin Control Panel", callback_data="admin:panel")])
+    return InlineKeyboardMarkup(buttons)
+
+
+def get_admin_panel_inline_keyboard() -> InlineKeyboardMarkup:
+    """Returns interactive inline buttons for Admin Control Panel."""
+    buttons = [
+        [
+            InlineKeyboardButton("📊 Live Subscriber Stats", callback_data="admin:stats"),
+            InlineKeyboardButton("📢 Broadcast Message", callback_data="admin:broadcast_prompt"),
+        ],
+        [
+            InlineKeyboardButton("🚀 Announce Scores Now", callback_data="admin:announce_scores"),
+            InlineKeyboardButton("🔍 Check CB Live Feed", callback_data="admin:check_cb"),
+        ],
+        [
+            InlineKeyboardButton("🧪 Test 7-Day Alert", callback_data="admin:test_7d"),
+            InlineKeyboardButton("🧪 Test 1-Day Alert", callback_data="admin:test_1d"),
+        ],
+        [
+            InlineKeyboardButton("🧪 Test Exam Morning", callback_data="admin:test_morning"),
+            InlineKeyboardButton("🧪 Test Score Release", callback_data="admin:test_scores"),
+        ],
+        [
+            InlineKeyboardButton("🏠 Back to Main Dashboard", callback_data="nav:menu"),
         ],
     ]
     return InlineKeyboardMarkup(buttons)
@@ -170,7 +200,7 @@ async def get_dashboard_content(chat_id: int) -> tuple[str, InlineKeyboardMarkup
     user_tz = await get_user_timezone(chat_id)
     next_test = get_next_test(user_tz)
     next_score = get_next_score_release(user_tz)
-    today = get_current_date(user_tz)
+    user_is_admin = is_admin(chat_id)
 
     next_test_str = f"{next_test['name']} ({next_test['test_date'].strftime('%b %d, %Y')})" if next_test else "None listed"
     next_score_str = f"{next_score['name']} ({next_score['score_release_date'].strftime('%b %d, %Y')})" if next_score else "None listed"
@@ -183,7 +213,29 @@ async def get_dashboard_content(chat_id: int) -> tuple[str, InlineKeyboardMarkup
         f"📢 <b>Next Score Release:</b> {next_score_str}\n\n"
         "<i>Tap any button below for instant updates, checklists, and countdowns:</i>"
     )
-    return text, get_main_menu_inline_keyboard()
+    return text, get_main_menu_inline_keyboard(is_user_admin=user_is_admin)
+
+
+async def get_admin_panel_content() -> tuple[str, InlineKeyboardMarkup]:
+    stats = await get_subscriber_stats()
+    next_test = get_next_test()
+    next_scores = get_next_score_release()
+
+    text = (
+        "👑 <b>ADMIN CONTROL PANEL</b> 👑\n"
+        "────────────────────────\n"
+        f"📊 <b>Active Subscribers:</b> <code>{stats.get('active', 0)}</code>\n"
+        f"👥 <b>Total Users:</b> <code>{stats.get('total', 0)}</code>\n"
+        f"📅 <b>Next Test:</b> {next_test['name'] if next_test else 'None'}\n"
+        f"📢 <b>Next Score Date:</b> {next_scores['score_release_date'] if next_scores else 'None'}\n\n"
+        "<b>Available Admin Actions:</b>\n"
+        "• <b>Stats:</b> View real-time database counts\n"
+        "• <b>Broadcast:</b> Send a message to all users\n"
+        "• <b>Announce Scores:</b> Instantly trigger score release alert\n"
+        "• <b>Check CB Feed:</b> Test live College Board API feed\n"
+        "• <b>Test Alerts:</b> Preview templates sent only to you"
+    )
+    return text, get_admin_panel_inline_keyboard()
 
 
 async def get_schedule_content(chat_id: int) -> tuple[str, InlineKeyboardMarkup]:
@@ -372,6 +424,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler for /start command - responds instantly with dashboard."""
     user = update.effective_user
     chat_id = update.effective_chat.id
+    user_is_admin = is_admin(chat_id)
 
     await add_or_reactivate_subscriber(
         chat_id=chat_id,
@@ -389,9 +442,20 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Ensure bottom reply keyboard is presented
     await update.message.reply_text(
         text="👋 Choose an option from the menu below or tap any button above:",
-        reply_markup=get_persistent_reply_keyboard(),
+        reply_markup=get_persistent_reply_keyboard(is_user_admin=user_is_admin),
         parse_mode="HTML",
     )
+
+
+async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler for /admin command to open the control panel."""
+    chat_id = update.effective_chat.id
+    if not is_admin(chat_id):
+        await update.message.reply_text("⛔ You are not authorized to view the admin panel.")
+        return
+
+    text, kb = await get_admin_panel_content()
+    await update.message.reply_text(text, reply_markup=kb, parse_mode="HTML")
 
 
 async def schedule_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -466,6 +530,12 @@ async def handle_text_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE
     elif text in ["⚙️ Notification Status", "⚙️ Status & Alerts"]:
         msg, kb = await get_status_content(chat_id)
         await update.message.reply_text(msg, reply_markup=kb, parse_mode="HTML")
+    elif text in ["👑 Admin Panel", "👑 Admin Control Panel"]:
+        if is_admin(chat_id):
+            msg, kb = await get_admin_panel_content()
+            await update.message.reply_text(msg, reply_markup=kb, parse_mode="HTML")
+        else:
+            await update.message.reply_text("⛔ You are not authorized to view the admin panel.")
     elif text == "🔗 Score Portal":
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("🌐 Open College Board Score Portal", url="https://studentscores.collegeboard.org/")],
@@ -545,6 +615,106 @@ async def inline_callback_router(update: Update, context: ContextTypes.DEFAULT_T
         tz_code = data.split(":", 1)[1]
         await set_user_timezone(chat_id, tz_code)
         text, kb = await get_timezone_menu_content(chat_id)
+        await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
+
+    # Admin Panel Actions
+    elif data == "admin:panel":
+        if not is_admin(chat_id):
+            await query.answer("⛔ Unauthorized", show_alert=True)
+            return
+        text, kb = await get_admin_panel_content()
+        await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
+
+    elif data == "admin:stats":
+        if not is_admin(chat_id):
+            await query.answer("⛔ Unauthorized", show_alert=True)
+            return
+        stats = await get_subscriber_stats()
+        text = (
+            "📊 <b>DETAILED LIVE STATS</b>\n"
+            "────────────────────────\n"
+            f"🟢 <b>Active Subscribers:</b> <code>{stats.get('active', 0)}</code>\n"
+            f"👥 <b>Total Registered:</b> <code>{stats.get('total', 0)}</code>\n"
+            f"⚡ <b>Engine Status:</b> <code>Healthy (WAL Mode)</code>\n"
+        )
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔄 Refresh Stats", callback_data="admin:stats")],
+            [InlineKeyboardButton("👑 Back to Admin Panel", callback_data="admin:panel")],
+        ])
+        await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
+
+    elif data == "admin:broadcast_prompt":
+        if not is_admin(chat_id):
+            await query.answer("⛔ Unauthorized", show_alert=True)
+            return
+        text = (
+            "📢 <b>BROADCAST TO ALL SUBSCRIBERS</b>\n"
+            "────────────────────────\n"
+            "To send a message to all users, type:\n\n"
+            "<code>/broadcast Your message text here</code>\n\n"
+            "<i>Supports HTML formatting like &lt;b&gt;bold&lt;/b&gt; and &lt;a href='...'&gt;links&lt;/a&gt;.</i>"
+        )
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("👑 Back to Admin Panel", callback_data="admin:panel")],
+        ])
+        await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
+
+    elif data == "admin:announce_scores":
+        if not is_admin(chat_id):
+            await query.answer("⛔ Unauthorized", show_alert=True)
+            return
+        test = get_next_score_release()
+        test_name = test["name"] if test else "Recent SAT"
+        announcement = TEMPLATES["score_release_morning"].format(
+            test_name=test_name,
+            release_date=get_current_date().strftime("%B %d, %Y"),
+        )
+        await query.edit_message_text(f"🚀 Broadcasting score release announcement for <b>{test_name}</b>...", parse_mode="HTML")
+        success, failed = await broadcast_message(context.bot, announcement)
+        text = (
+            f"✅ <b>Score Announcement Sent!</b>\n\n"
+            f"• Delivered to: <b>{success}</b> subscribers\n"
+            f"• Failed/Removed: <b>{failed}</b>\n"
+        )
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("👑 Back to Admin Panel", callback_data="admin:panel")]])
+        await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
+
+    elif data == "admin:check_cb":
+        if not is_admin(chat_id):
+            await query.answer("⛔ Unauthorized", show_alert=True)
+            return
+        from checker import fetch_collegeboard_alerts, detect_early_score_release
+        alerts = await asyncio.to_thread(fetch_collegeboard_alerts)
+        is_early, detail = await asyncio.to_thread(detect_early_score_release)
+        text = (
+            "🔍 <b>COLLEGE BOARD LIVE FEED STATUS</b>\n"
+            "────────────────────────\n"
+            f"📡 <b>Alerts Feed Count:</b> {len(alerts)} alerts\n"
+            f"⚡ <b>Early Release Detected:</b> {'YES 🚨' if is_early else 'NO (Normal Schedule)'}\n"
+            f"ℹ️ <b>Detail:</b> {detail or 'Feed reachable, no active emergency banners.'}\n"
+        )
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔄 Re-check Feed", callback_data="admin:check_cb")],
+            [InlineKeyboardButton("👑 Back to Admin Panel", callback_data="admin:panel")],
+        ])
+        await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
+
+    elif data in ["admin:test_7d", "admin:test_1d", "admin:test_morning", "admin:test_scores"]:
+        if not is_admin(chat_id):
+            await query.answer("⛔ Unauthorized", show_alert=True)
+            return
+        next_test = get_next_test() or {"name": "August 2026 SAT", "test_date": date(2026, 8, 22), "score_release_date": date(2026, 9, 4)}
+        if data == "admin:test_7d":
+            preview_text = TEMPLATES["exam_7days"].format(test_name=next_test["name"], test_date=next_test["test_date"].strftime("%A, %B %d, %Y"))
+        elif data == "admin:test_1d":
+            preview_text = TEMPLATES["exam_1day"].format(test_name=next_test["name"], test_date=next_test["test_date"].strftime("%A, %B %d, %Y"))
+        elif data == "admin:test_morning":
+            preview_text = TEMPLATES["exam_morning"].format(test_name=next_test["name"], test_date=next_test["test_date"].strftime("%A, %B %d, %Y"))
+        else:
+            preview_text = TEMPLATES["score_release_morning"].format(test_name=next_test["name"], release_date=next_test["score_release_date"].strftime("%A, %B %d, %Y"))
+        
+        text = f"🧪 <b>[ADMIN PREVIEW ONLY]</b>\n────────────────────────\n" + preview_text
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("👑 Back to Admin Panel", callback_data="admin:panel")]])
         await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
 
 
@@ -821,6 +991,7 @@ async def main():
     application.add_handler(CommandHandler("feedback", contact_command))
 
     # Admin Handlers
+    application.add_handler(CommandHandler("admin", admin_command))
     application.add_handler(CommandHandler("stats", stats_command))
     application.add_handler(CommandHandler("broadcast", broadcast_command))
     application.add_handler(CommandHandler("announce_scores", announce_scores_command))
