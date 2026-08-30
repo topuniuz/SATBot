@@ -1124,9 +1124,21 @@ async def main():
 
     logger.info("Starting SAT Notify Telegram Bot with Premium UI...")
 
+    # Wire application to web server
+    from web_server import set_telegram_app
+    set_telegram_app(application)
+
     async with application:
         await application.start()
-        await application.updater.start_polling(drop_pending_updates=True)
+
+        webhook_base = os.getenv("WEBHOOK_URL", os.getenv("RENDER_EXTERNAL_URL", "")).rstrip("/")
+        if webhook_base:
+            webhook_url = f"{webhook_base}/webhook"
+            await application.bot.set_webhook(url=webhook_url, drop_pending_updates=True)
+            logger.info("Telegram Webhook active on: %s", webhook_url)
+        else:
+            await application.updater.start_polling(drop_pending_updates=True)
+            logger.info("Telegram Polling active.")
 
         scheduler_task = asyncio.create_task(background_scheduler_loop(application))
         try:
@@ -1134,7 +1146,8 @@ async def main():
         except asyncio.CancelledError:
             pass
         finally:
-            await application.updater.stop()
+            if not webhook_base and application.updater:
+                await application.updater.stop()
             await application.stop()
 
 

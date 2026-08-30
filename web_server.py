@@ -51,6 +51,15 @@ def generate_html_status(stats: dict, next_test: dict | None, next_scores: dict 
 </html>"""
 
 
+# Global reference to Telegram Application for webhook dispatching
+_TELEGRAM_APP = None
+
+
+def set_telegram_app(app):
+    global _TELEGRAM_APP
+    _TELEGRAM_APP = app
+
+
 # Built-in lightweight async HTTP server (Zero external dependencies needed)
 async def handle_http_connection(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
     try:
@@ -62,19 +71,47 @@ async def handle_http_connection(reader: asyncio.StreamReader, writer: asyncio.S
         if len(parts) < 2:
             return
 
-        method, path = parts[0], parts[1]
+        method, path = parts[0].upper(), parts[1]
 
         # Read remaining headers
+        headers = {}
+        content_length = 0
         while True:
             line = await reader.readline()
             if not line or line == b"\r\n":
                 break
+            header_str = line.decode("utf-8", errors="ignore").strip()
+            if ":" in header_str:
+                k, v = header_str.split(":", 1)
+                headers[k.strip().lower()] = v.strip()
+
+        if "content-length" in headers:
+            try:
+                content_length = int(headers["content-length"])
+            except ValueError:
+                content_length = 0
+
+        body = b""
+        if content_length > 0:
+            body = await reader.readexactly(content_length)
 
         stats = await get_subscriber_stats()
         next_test = get_next_test()
         next_scores = get_next_score_release()
 
-        if path.startswith("/health"):
+        # Handle Webhook Updates from Telegram
+        if method == "POST" and path.startswith("/webhook"):
+            if _TELEGRAM_APP and body:
+                try:
+                    from telegram import Update
+                    data = json.loads(body.decode("utf-8"))
+                    update = Update.de_json(data, _TELEGRAM_APP.bot)
+                    asyncio.create_task(_TELEGRAM_APP.process_update(update))
+                except Exception as e:
+                    logger.error("Error processing webhook update: %s", e)
+
+            response = b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK"
+        elif path.startswith("/health"):
             data = json.dumps({
                 "status": "healthy",
                 "service": "sat-telegram-notify-bot",
@@ -110,5 +147,5 @@ async def handle_http_connection(reader: asyncio.StreamReader, writer: asyncio.S
 async def start_web_server(port: int = PORT):
     """Starts the HTTP health check server."""
     server = await asyncio.start_server(handle_http_connection, "0.0.0.0", port)
-    logger.info("Health check server running on http://0.0.0.0:%d", port)
+    logger.info("Health check & webhook server running on http://0.0.0.0:%d", port)
     return server
