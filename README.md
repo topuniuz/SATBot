@@ -1,157 +1,168 @@
-# 🎓 SAT Notification & Score Release Telegram Bot
+<div align="center">
 
-An automated Telegram bot that sends reminders, test-day checklists, and good luck wishes before SAT exams, and notifies students when College Board releases SAT scores. Ready to deploy for **free** on [Render.com](https://render.com).
+# 🎓 SATBot — Official SAT Score Release & Exam Tracker
 
----
+**An intelligent, high-performance Telegram Bot for Digital SAT students and study groups.**  
+*Automated College Board score drop notifications, live exam countdowns, test-day checklists, and timezone conversion.*
 
-## ✨ Features
+[![CI Status](https://github.com/topuniuz/SATBot/actions/workflows/ci.yml/badge.svg)](https://github.com/topuniuz/SATBot/actions)
+[![Python Version](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue.svg)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Telegram API](https://img.shields.io/badge/Telegram%20Bot%20API-v22.8-blue.svg?logo=telegram)](https://core.telegram.org/bots/api)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-- 📢 **Automated Score Release Alerts**: Sends immediate announcements on score release days (with morning and evening release batch reminders).
-- 🌟 **Test-Day Motivation & Reminders**:
-  - **7 Days Before Exam**: Bluebook setup checklist & registration reminders.
-  - **1 Day Before Exam**: Night-before checklist (photo ID, calculator, device charger, rest).
-  - **Exam Morning**: Motivational good-luck message.
-- 📅 **Interactive Commands**:
-  - `/start` - Subscribe to alerts and get the welcome guide.
-  - `/schedule` - View full calendar of upcoming SAT test dates and expected score release dates.
-  - `/countdown` - Live countdown to the next SAT and the next score release.
-  - `/tips` - Digital SAT test-day checklist, pacing tips, and Bluebook advice.
-  - `/status` - Check your subscription status.
-  - `/subscribe` & `/unsubscribe` - Manage notification preferences.
-- 👑 **Admin Commands** (for bot owner):
-  - `/broadcast <message>` - Send custom announcements to all active subscribers.
-  - `/announce_scores [SAT Name]` - Instantly trigger a score release broadcast.
-  - `/test_alert <7days|1day|morning|scores>` - Preview alert templates in your private chat.
-  - `/stats` - View active and total subscriber counts.
-- ⚡ **Hosting Optimized**:
-  - Built-in lightweight health-check web server on port `8080` (allows free hosting on Render, Railway, Fly.io, etc.).
-  - Deduplication engine ensures users never receive duplicate alerts for the same event.
+[Features](#-key-features) • [Quick Start](#-quick-start) • [Deployment](#-free-247-hosting-on-render) • [Commands](#-commands-reference) • [Contributing](#-contributing) • [License](#-license)
+
+</div>
 
 ---
 
-## 🚀 Quick Setup Guide
+## ✨ Key Features
 
-### 1. Get a Telegram Bot Token
-1. Open Telegram and search for [@BotFather](https://t.me/BotFather).
-2. Send `/newbot` and follow the instructions to name your bot and choose a username (must end in `bot`, e.g. `sat_score_notify_bot`).
-3. Copy the **HTTP API Token** provided by BotFather (looks like `1234567890:ABCdefGhIJKlmNoPQRsTUVwxyZ`).
-
-### 2. (Optional) Get Your Admin User ID
-1. Search for [@userinfobot](https://t.me/userinfobot) on Telegram.
-2. Send any message to get your numeric `Id` (e.g. `123456789`).
-3. This allows you to use admin commands like `/broadcast` and `/announce_scores`.
+- 📢 **Official Score Release Alerts**: Automatically notifies students the second College Board releases SAT scores across morning (~6:00 AM ET) and evening (~6:00 PM ET) rolling batches.
+- ⚡ **Early Release Detection**: Live scanner monitors College Board's official API alert feeds to broadcast instant early-release notifications.
+- ⏳ **Live Countdowns**: Real-time days, hours, and date countdowns to the next Digital SAT exam and score drop.
+- 🎒 **Test-Day Checklists & Motivation**:
+  - **7 Days Before**: Bluebook™ setup and admission ticket verification.
+  - **1 Day Before**: Packing list (photo ID, approved calculator, device charger, snacks) and rest guidelines.
+  - **Exam Morning**: Motivational good-luck messages and test-center door closing times.
+- 🌍 **Dynamic Timezone Engine**: Automatically converts all testing schedules and countdowns to the student's local timezone (e.g., `Asia/Tashkent`, `US/Eastern`, `Europe/London`, `UTC`).
+- 👥 **Telegram Groups & Supergroups**: Add `@SATBot` to any classroom or study group chat for automated group reminders and shared countdowns.
+- 🔍 **Inline Mode Anywhere**: Type `@SATBot` in any Telegram chat to instantly generate and share live interactive SAT countdown and schedule cards.
+- 👑 **Interactive Admin Control Panel**: Visual 1-tap broadcast engine with live previews, subscriber database metrics, and alert template testing.
+- ⚡ **Zero Downtime & Fast Engine**: SQLite in **WAL mode** with in-memory caching and built-in HTTP server supporting both Webhook and Polling.
 
 ---
 
-## 💻 Local Development
+## 📱 Bot Commands Reference
 
-### 1. Install Dependencies
+### 🎓 Student & Group Commands
+| Command | Description |
+| :--- | :--- |
+| `/start` | Open the interactive main dashboard and subscribe to alerts |
+| `/schedule` | View official 2026–2028 College Board SAT test & score dates |
+| `/countdown` | Live real-time countdown to the next SAT and score release |
+| `/timezone` | Select or set your city/region timezone |
+| `/tips` | Digital SAT test-day checklist and pacing strategies |
+| `/status` | View notification status and toggle alert preferences |
+| `/contact` | Send a support message or feedback directly to the maintainers |
+
+### 👑 Admin Control Commands
+| Command | Description |
+| :--- | :--- |
+| `/admin` | Open the visual interactive Admin Control Panel |
+| `/broadcast <msg>` | Broadcast custom formatted announcement to all subscribers |
+| `/announce_scores` | Instantly trigger score release broadcast for the current SAT |
+| `/reply <user_id> <msg>` | Reply directly to a student's support message |
+| `/stats` | View real-time active and registered subscriber counts |
+
+---
+
+## 🛠 Tech Stack & Architecture
+
+```mermaid
+graph TD
+    A[College Board Testing Calendar & Alerts API] -->|Periodic Scraper / Checker| B(SATBot Core Engine)
+    B -->|SQLite WAL + RAM Cache| C[(Local Database)]
+    B -->|Async HTTP Server 8080| D[Health Check & Telegram Webhooks]
+    B -->|python-telegram-bot v22| E[Telegram Bot API]
+    E -->|Instant Direct Push| F[Students & Private Chats]
+    E -->|Group Broadcasts| G[SAT Study Groups & Channels]
+    E -->|Inline Cards| H[Inline Queries @SATBot]
+```
+
+- **Runtime**: Python 3.11+ (Asynchronous `asyncio`)
+- **Framework**: `python-telegram-bot` 22.8+
+- **Database**: SQLite3 with `WAL` (Write-Ahead Logging) mode and in-memory cache
+- **Server**: Zero-dependency async HTTP server for webhooks and health monitoring
+- **Hosting Compatibility**: Render, Railway, Fly.io, Docker, AWS, VPS
+
+---
+
+## 💻 Local Development Setup
+
+### 1. Clone the Repository
 ```bash
-# Clone or navigate to the directory
-cd "sat notify"
+git clone https://github.com/topuniuz/SATBot.git
+cd SATBot
+```
 
-# Create a virtual environment (optional but recommended)
+### 2. Create Virtual Environment & Install Dependencies
+```bash
 python3 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install requirements
 pip install -r requirements.txt
 ```
 
-### 2. Configure Environment
-Create a `.env` file from the `.env.example` template:
+### 3. Environment Configuration
 ```bash
 cp .env.example .env
 ```
-Open `.env` and fill in your details:
+Edit `.env` with your credentials:
 ```env
 BOT_TOKEN=your_telegram_bot_token_here
-ADMIN_USER_ID=your_telegram_user_id
+ADMIN_USER_ID=your_numeric_telegram_user_id
+ADMIN_CONTACT=@mx767
 PORT=8080
 TIMEZONE=US/Eastern
 ```
 
-### 3. Run the Bot
+### 4. Run the Test Suite
 ```bash
-python bot.py
+python3 test_bot.py
 ```
-Open your bot in Telegram and send `/start`!
+
+### 5. Launch the Bot
+```bash
+python3 bot.py
+```
 
 ---
 
-## 🌐 Deploy to Render.com (100% Free)
+## 🌐 Free 24/7 Hosting on Render
 
-[Render](https://render.com) provides free web services that run Python applications with zero maintenance.
+You can host SATBot **100% free** with 24/7 uptime on [Render.com](https://render.com):
 
-### Step 1: Push Code to GitHub
-1. Create a new repository on GitHub.
-2. Push your project:
-   ```bash
-   git init
-   git add .
-   git commit -m "Initial commit for SAT notify bot"
-   git branch -M main
-   git remote add origin https://github.com/topuniuz/SATBot.git
-   git push -u origin main
-   ```
-
-### Step 2: Create a Web Service on Render
-1. Log in to [Render Dashboard](https://dashboard.render.com).
-2. Click **New +** -> **Web Service**.
-3. Connect your GitHub repository.
-4. Fill in the service configuration:
-   - **Name**: `sat-notify-bot`
-   - **Language**: `Python 3`
-   - **Region**: Closest to you (e.g., Oregon or Frankfurt)
-   - **Branch**: `main`
+1. **Push to GitHub**: Fork or push this repo to your GitHub account.
+2. **Create Web Service on Render**:
+   - Go to [dashboard.render.com](https://dashboard.render.com) ➔ **New +** ➔ **Web Service**.
+   - Connect your `SATBot` repository.
+   - **Environment**: `Python 3`
    - **Build Command**: `pip install -r requirements.txt`
    - **Start Command**: `python bot.py`
    - **Instance Type**: `Free`
-5. Under **Environment Variables**, add:
-   - `BOT_TOKEN`: Your Telegram bot token from `@BotFather`
-   - `ADMIN_USER_ID`: Your Telegram numeric user ID
-   - `TIMEZONE`: `US/Eastern`
+3. **Set Environment Variables**:
+   - `BOT_TOKEN`: Token from [@BotFather](https://t.me/BotFather)
+   - `ADMIN_USER_ID`: Your numeric Telegram ID from [@userinfobot](https://t.me/userinfobot)
+   - `ADMIN_CONTACT`: `@your_telegram_username`
    - `PORT`: `8080`
-6. Click **Create Web Service**.
-
-### Step 3: Keep-Alive Tip (Optional for 24/7 Free Hosting)
-Render free web services may sleep after 15 minutes of no HTTP requests. Because the bot includes a lightweight `/health` endpoint:
-1. Copy your Render web service URL (e.g. `https://sat-notify-bot.onrender.com`).
-2. Go to a free monitoring service like [UptimeRobot](https://uptimerobot.com) or [cron-job.org](https://cron-job.org).
-3. Add a new HTTP monitor pointing to `https://sat-notify-bot.onrender.com/health` with a 5-10 minute interval.
-4. Your bot will remain awake and active 24/7 at $0 cost!
+4. **Keep-Alive (Prevent Free Instance Sleep)**:
+   - Copy your Render service URL (e.g. `https://satbot-mne0.onrender.com`).
+   - Add a free 5-minute HTTP monitor on [cron-job.org](https://cron-job.org) or [uptimerobot.com](https://uptimerobot.com) targeting `https://satbot-mne0.onrender.com/health`.
+   - Your bot will stay awake 24/7 with zero spin-down delay!
 
 ---
 
-## 📁 Project Structure
+## 🤝 Contributing
 
-```
-sat notify/
-├── bot.py               # Main bot logic, command handlers, and background scheduler
-├── config.py            # SAT schedule calendar, templates, and timezone configuration
-├── database.py          # SQLite database layer for subscriber and alert deduplication
-├── web_server.py        # aiohttp server providing / and /health endpoints
-├── requirements.txt     # Python package dependencies
-├── render.yaml          # Render.com Blueprint configuration
-├── Procfile             # Process file for Render / Heroku
-├── Dockerfile           # Container configuration
-├── .env.example         # Environment variables template
-└── README.md            # Documentation and deployment instructions
-```
+Contributions make the open-source community an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
+
+Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details on code style, testing, and pull request workflows.
 
 ---
 
-## 🛠 Adding / Updating SAT Dates
+## 🛡 Security
 
-To add new testing seasons or update test dates:
-1. Open [config.py](config.py).
-2. Add the new date object to `SAT_SCHEDULE`:
-   ```python
-   {
-       "id": "sat_2027_08",
-       "name": "August 2027 SAT",
-       "test_date": date(2027, 8, 28),
-       "score_release_date": date(2027, 9, 10),
-   }
-   ```
-3. Commit and push to GitHub — Render will automatically redeploy!
+If you discover any security vulnerabilities, please review our [SECURITY.md](SECURITY.md) for reporting guidelines.
+
+---
+
+## 📄 License
+
+Distributed under the **MIT License**. See [LICENSE](LICENSE) for more information.
+
+---
+
+<div align="center">
+  <sub>Built with ❤️ for SAT students worldwide by <a href="https://github.com/topuniuz">topuniuz</a>.</sub>
+</div>
