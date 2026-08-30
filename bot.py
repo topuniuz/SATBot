@@ -40,6 +40,7 @@ from database import (
     init_db,
     add_or_reactivate_subscriber,
     unsubscribe_user,
+    reactivate_all_subscribers,
     set_user_timezone,
     get_user_timezone,
     get_active_subscribers,
@@ -394,7 +395,7 @@ async def get_timezone_menu_content(chat_id: int) -> tuple[str, InlineKeyboardMa
 # ---------------------------------------------------------
 
 async def broadcast_message(bot, text: str, parse_mode: str = "HTML") -> tuple[int, int]:
-    """Sends a message to all active subscribers with rate limiting."""
+    """Sends a message to all active subscribers with rate limiting and automatic HTML fallback."""
     subscribers = await get_active_subscribers()
     success = 0
     failed = 0
@@ -406,12 +407,37 @@ async def broadcast_message(bot, text: str, parse_mode: str = "HTML") -> tuple[i
                 text=text,
                 parse_mode=parse_mode,
                 disable_web_page_preview=True,
-                reply_markup=get_main_menu_inline_keyboard(),
+                reply_markup=get_main_menu_inline_keyboard(is_user_admin=is_admin(chat_id)),
             )
             success += 1
             await asyncio.sleep(0.04)  # 25 msgs/sec for high speed
-        except (Forbidden, BadRequest) as e:
-            logger.warning("Failed to send message to %s (%s). Deactivating.", chat_id, e)
+        except BadRequest as e:
+            err_msg = str(e).lower()
+            if "can't parse entities" in err_msg or "tag" in err_msg or "entity" in err_msg:
+                # Malformed HTML: Retry sending as plain text without HTML parsing
+                try:
+                    await bot.send_message(
+                        chat_id=chat_id,
+                        text=text,
+                        parse_mode=None,
+                        disable_web_page_preview=True,
+                        reply_markup=get_main_menu_inline_keyboard(is_user_admin=is_admin(chat_id)),
+                    )
+                    success += 1
+                    await asyncio.sleep(0.04)
+                    continue
+                except Exception as inner_e:
+                    logger.error("Failed plain text broadcast to %s: %s", chat_id, inner_e)
+                    failed += 1
+            elif "chat not found" in err_msg or "user is deactivated" in err_msg or "blocked" in err_msg:
+                logger.warning("User %s no longer accessible: %s. Unsubscribing.", chat_id, e)
+                await unsubscribe_user(chat_id)
+                failed += 1
+            else:
+                logger.error("BadRequest sending to %s: %s", chat_id, e)
+                failed += 1
+        except Forbidden as e:
+            logger.warning("Bot was blocked by user %s. Unsubscribing.", chat_id)
             await unsubscribe_user(chat_id)
             failed += 1
         except Exception as e:
@@ -662,6 +688,27 @@ async def inline_callback_router(update: Update, context: ContextTypes.DEFAULT_T
         if not is_admin(chat_id):
             await query.answer("⛔ Unauthorized", show_alert=True)
             return
+        stats = await get_subscriber_stats()
+        text = (
+            "📊 <b>DETAILED LIVE STATS</b>\n"
+            "────────────────────────\n"
+            f"🟢 <b>Active Subscribers:</b> <code>{stats.get('active', 0)}</code>\n"
+            f"👥 <b>Total Registered:</b> <code>{stats.get('total', 0)}</code>\n"
+            f"⚡ <b>Engine Status:</b> <code>Healthy (WAL Mode)</code>\n"
+        )
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔄 Refresh Stats", callback_data="admin:stats")],
+            [InlineKeyboardButton("⚡ Reactivate All Users", callback_data="admin:reactivate_all")],
+            [InlineKeyboardButton("👑 Back to Admin Panel", callback_data="admin:panel")],
+        ])
+        await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
+
+    elif data == "admin:reactivate_all":
+        if not is_admin(chat_id):
+            await query.answer("⛔ Unauthorized", show_alert=True)
+            return
+        count = await reactivate_all_subscribers()
+        await query.answer(f"✅ Reactivated {count} users!", show_alert=True)
         stats = await get_subscriber_stats()
         text = (
             "📊 <b>DETAILED LIVE STATS</b>\n"

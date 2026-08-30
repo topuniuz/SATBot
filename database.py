@@ -104,6 +104,19 @@ async def unsubscribe_user(chat_id: int) -> bool:
     return await asyncio.to_thread(_unsubscribe_user_sync, chat_id)
 
 
+def _reactivate_all_subscribers_sync() -> int:
+    now = datetime.now(timezone.utc).isoformat()
+    with _get_db() as conn:
+        cursor = conn.execute("UPDATE subscribers SET is_active = 1, updated_at = ?", (now,))
+        conn.commit()
+        return cursor.rowcount
+
+
+async def reactivate_all_subscribers() -> int:
+    """Reactivates all registered users."""
+    return await asyncio.to_thread(_reactivate_all_subscribers_sync)
+
+
 def _set_user_timezone_sync(chat_id: int, tz_str: str) -> bool:
     now = datetime.now(timezone.utc).isoformat()
     _TIMEZONE_CACHE[chat_id] = tz_str
