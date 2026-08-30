@@ -32,143 +32,114 @@ except Exception:
 # SQLite Database path
 DB_PATH = os.getenv("DB_PATH", "sat_bot.db")
 
-# SAT Testing Schedule Calendar
-# Format: {
-#   "id": unique_slug,
-#   "name": Display Name,
-#   "test_date": date(YYYY, MM, DD),
-#   "score_release_date": date(YYYY, MM, DD),
-#   "registration_deadline": date(YYYY, MM, DD) optional,
-# }
+# Official College Board SAT Testing & Score Release Schedule
+# Source: https://satsuite.collegeboard.org/scores/score-release-dates & https://satsuite.collegeboard.org/sat/dates-deadlines
 SAT_SCHEDULE = [
-    # 2024 - 2025 School Year
-    {
-        "id": "sat_2024_08",
-        "name": "August 2024 SAT",
-        "test_date": date(2024, 8, 24),
-        "score_release_date": date(2024, 9, 6),
-    },
-    {
-        "id": "sat_2024_10",
-        "name": "October 2024 SAT",
-        "test_date": date(2024, 10, 5),
-        "score_release_date": date(2024, 10, 18),
-    },
-    {
-        "id": "sat_2024_11",
-        "name": "November 2024 SAT",
-        "test_date": date(2024, 11, 2),
-        "score_release_date": date(2024, 11, 15),
-    },
-    {
-        "id": "sat_2024_12",
-        "name": "December 2024 SAT",
-        "test_date": date(2024, 12, 7),
-        "score_release_date": date(2024, 12, 20),
-    },
-    {
-        "id": "sat_2025_03",
-        "name": "March 2025 SAT",
-        "test_date": date(2025, 3, 8),
-        "score_release_date": date(2025, 3, 21),
-    },
-    {
-        "id": "sat_2025_05",
-        "name": "May 2025 SAT",
-        "test_date": date(2025, 5, 3),
-        "score_release_date": date(2025, 5, 16),
-    },
-    {
-        "id": "sat_2025_06",
-        "name": "June 2025 SAT",
-        "test_date": date(2025, 6, 7),
-        "score_release_date": date(2025, 6, 20),
-    },
-    # 2025 - 2026 School Year
-    {
-        "id": "sat_2025_08",
-        "name": "August 2025 SAT",
-        "test_date": date(2025, 8, 23),
-        "score_release_date": date(2025, 9, 5),
-    },
-    {
-        "id": "sat_2025_10",
-        "name": "October 2025 SAT",
-        "test_date": date(2025, 10, 4),
-        "score_release_date": date(2025, 10, 17),
-    },
-    {
-        "id": "sat_2025_11",
-        "name": "November 2025 SAT",
-        "test_date": date(2025, 11, 8),
-        "score_release_date": date(2025, 11, 21),
-    },
-    {
-        "id": "sat_2025_12",
-        "name": "December 2025 SAT",
-        "test_date": date(2025, 12, 6),
-        "score_release_date": date(2025, 12, 19),
-    },
-    {
-        "id": "sat_2026_03",
-        "name": "March 2026 SAT",
-        "test_date": date(2026, 3, 14),
-        "score_release_date": date(2026, 3, 27),
-    },
-    {
-        "id": "sat_2026_05",
-        "name": "May 2026 SAT",
-        "test_date": date(2026, 5, 2),
-        "score_release_date": date(2026, 5, 15),
-    },
-    {
-        "id": "sat_2026_06",
-        "name": "June 2026 SAT",
-        "test_date": date(2026, 6, 6),
-        "score_release_date": date(2026, 6, 19),
-    },
-    # 2026 - 2027 Anticipated
+    # 2026 - 2027 Official College Board Testing Year
     {
         "id": "sat_2026_08",
         "name": "August 2026 SAT",
-        "test_date": date(2026, 8, 29),
-        "score_release_date": date(2026, 9, 11),
+        "test_date": date(2026, 8, 22),
+        "score_release_date": date(2026, 9, 4),
+        "registration_deadline": date(2026, 8, 7),
+    },
+    {
+        "id": "sat_2026_09",
+        "name": "September 2026 SAT",
+        "test_date": date(2026, 9, 12),
+        "score_release_date": date(2026, 9, 25),
+        "registration_deadline": date(2026, 8, 28),
     },
     {
         "id": "sat_2026_10",
         "name": "October 2026 SAT",
         "test_date": date(2026, 10, 3),
         "score_release_date": date(2026, 10, 16),
+        "registration_deadline": date(2026, 9, 18),
     },
     {
         "id": "sat_2026_11",
         "name": "November 2026 SAT",
         "test_date": date(2026, 11, 7),
         "score_release_date": date(2026, 11, 20),
+        "registration_deadline": date(2026, 10, 23),
     },
     {
         "id": "sat_2026_12",
         "name": "December 2026 SAT",
         "test_date": date(2026, 12, 5),
         "score_release_date": date(2026, 12, 18),
+        "registration_deadline": date(2026, 11, 20),
     },
     {
         "id": "sat_2027_03",
         "name": "March 2027 SAT",
-        "test_date": date(2027, 3, 13),
-        "score_release_date": date(2027, 3, 26),
+        "test_date": date(2027, 3, 6),
+        "score_release_date": date(2027, 3, 19),
+        "registration_deadline": date(2027, 2, 19),
     },
     {
         "id": "sat_2027_05",
         "name": "May 2027 SAT",
-        "test_date": date(2027, 5, 8),
-        "score_release_date": date(2027, 5, 21),
+        "test_date": date(2027, 5, 1),
+        "score_release_date": date(2027, 5, 14),
+        "registration_deadline": date(2027, 4, 16),
     },
     {
         "id": "sat_2027_06",
         "name": "June 2027 SAT",
         "test_date": date(2027, 6, 5),
         "score_release_date": date(2027, 6, 18),
+        "registration_deadline": date(2027, 5, 21),
+    },
+    # 2027 - 2028 Anticipated College Board Dates
+    {
+        "id": "sat_2027_08",
+        "name": "August 2027 SAT",
+        "test_date": date(2027, 8, 28),
+        "score_release_date": date(2027, 9, 10),
+    },
+    {
+        "id": "sat_2027_09",
+        "name": "September 2027 SAT",
+        "test_date": date(2027, 9, 18),
+        "score_release_date": date(2027, 10, 1),
+    },
+    {
+        "id": "sat_2027_10",
+        "name": "October 2027 SAT",
+        "test_date": date(2027, 10, 2),
+        "score_release_date": date(2027, 10, 15),
+    },
+    {
+        "id": "sat_2027_11",
+        "name": "November 2027 SAT",
+        "test_date": date(2027, 11, 6),
+        "score_release_date": date(2027, 11, 19),
+    },
+    {
+        "id": "sat_2027_12",
+        "name": "December 2027 SAT",
+        "test_date": date(2027, 12, 4),
+        "score_release_date": date(2027, 12, 17),
+    },
+    {
+        "id": "sat_2028_03",
+        "name": "March 2028 SAT",
+        "test_date": date(2028, 3, 4),
+        "score_release_date": date(2028, 3, 17),
+    },
+    {
+        "id": "sat_2028_05",
+        "name": "May 2028 SAT",
+        "test_date": date(2028, 5, 6),
+        "score_release_date": date(2028, 5, 19),
+    },
+    {
+        "id": "sat_2028_06",
+        "name": "June 2028 SAT",
+        "test_date": date(2028, 6, 3),
+        "score_release_date": date(2028, 6, 16),
     },
 ]
 
@@ -291,14 +262,19 @@ TEMPLATES = {
     "score_release_morning": (
         "📢 <b>SAT SCORES ARE RELEASING TODAY!</b> 📢\n\n"
         "🎉 College Board is releasing scores for the <b>{test_name}</b> today ({release_date})!\n\n"
-        "ℹ️ <b>How score release works:</b>\n"
-        "• Scores are released in <b>two main batches</b>:\n"
-        "  🌅 Batch 1: Around <b>6:00 AM - 8:00 AM ET</b>\n"
-        "  🌇 Batch 2: Around <b>6:00 PM - 8:00 PM ET</b>\n"
-        "• If you don't see your score in the morning, check again in the evening.\n\n"
+        "ℹ️ <b>Release Batches:</b>\n"
+        "• 🌅 <b>Batch 1:</b> ~6:00 AM – 8:00 AM ET\n"
+        "• 🌇 <b>Batch 2:</b> ~6:00 PM – 8:00 PM ET\n\n"
         "🔗 <b>Check Your Score:</b>\n"
         "👉 <a href='https://studentscores.collegeboard.org/'>College Board Student Score Portal</a>\n\n"
-        "<i>Wishing you your dream score! May your hard work pay off! 🎯🎉</i>"
+        "<i>Best of luck on your scores! 🎯💯</i>"
+    ),
+    "early_score_release": (
+        "🚨 <b>SAT SCORES RELEASED EARLY!</b> 🚨\n\n"
+        "⚡ Scores for the <b>{test_name}</b> have just been made available early by College Board!\n\n"
+        "🔗 <b>Check Your Score Now:</b>\n"
+        "👉 <a href='https://studentscores.collegeboard.org/'>College Board Student Score Portal</a>\n\n"
+        "<i>Good luck! Go check your portal now! 🚀🎉</i>"
     ),
     "tips": (
         "📝 <b>Digital SAT Test-Day Tips & Checklist</b>\n\n"

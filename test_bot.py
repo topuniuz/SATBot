@@ -76,6 +76,13 @@ class TestSATBot(unittest.IsolatedAsyncioTestCase):
             self.assertIn("name", next_score)
             self.assertIn("score_release_date", next_score)
 
+    def test_early_checker(self):
+        import checker
+        alerts = checker.fetch_collegeboard_alerts()
+        self.assertIsInstance(alerts, list)
+        is_early, details = checker.detect_early_score_release()
+        self.assertIsInstance(is_early, bool)
+
     def test_templates_formatting(self):
         test_data = {
             "test_name": "October 2026 SAT",

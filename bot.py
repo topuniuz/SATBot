@@ -557,15 +557,38 @@ async def announce_scores_command(update: Update, context: ContextTypes.DEFAULT_
     )
 
 
+from checker import detect_early_score_release
+
+
 # ---------------------------------------------------------
 # BACKGROUND NOTIFICATION RUNNER
 # ---------------------------------------------------------
 
 async def check_and_send_scheduled_alerts(bot):
-    """Checks schedule against today's date and triggers automated alerts."""
+    """Checks schedule against today's date and triggers automated alerts including early releases."""
     today = get_current_date()
     logger.info("Running scheduled alert check for date: %s", today)
 
+    # 1. Early Score Release Live Scanner
+    next_scores = get_next_score_release()
+    if next_scores:
+        item_id = next_scores["id"]
+        test_name = next_scores["name"]
+        score_date = next_scores["score_release_date"]
+        test_date = next_scores["test_date"]
+
+        # Only scan if test has finished and scores are not yet marked as sent
+        if test_date <= today <= score_date:
+            event_key = f"{item_id}_score_release_day"
+            if not await is_notification_sent(event_key):
+                is_early, alert_header = await asyncio.to_thread(detect_early_score_release)
+                if is_early:
+                    logger.info("🚨 EARLY SCORE RELEASE DETECTED for %s (%s)", test_name, alert_header)
+                    msg = TEMPLATES["early_score_release"].format(test_name=test_name)
+                    success, _ = await broadcast_message(bot, msg)
+                    await mark_notification_sent(event_key, success)
+
+    # 2. Standard Calendar Trigger Checks
     for item in SAT_SCHEDULE:
         item_id = item["id"]
         test_name = item["name"]
@@ -574,7 +597,7 @@ async def check_and_send_scheduled_alerts(bot):
 
         days_to_test = (test_date - today).days
 
-        # 1. Check 7 Days Before Exam
+        # Check 7 Days Before Exam
         if days_to_test == 7:
             event_key = f"{item_id}_7days"
             if not await is_notification_sent(event_key):
@@ -586,7 +609,7 @@ async def check_and_send_scheduled_alerts(bot):
                 success, _ = await broadcast_message(bot, msg)
                 await mark_notification_sent(event_key, success)
 
-        # 2. Check 1 Day Before Exam
+        # Check 1 Day Before Exam
         elif days_to_test == 1:
             event_key = f"{item_id}_1day"
             if not await is_notification_sent(event_key):
@@ -598,7 +621,7 @@ async def check_and_send_scheduled_alerts(bot):
                 success, _ = await broadcast_message(bot, msg)
                 await mark_notification_sent(event_key, success)
 
-        # 3. Check Exam Morning
+        # Check Exam Morning
         elif days_to_test == 0:
             event_key = f"{item_id}_exam_morning"
             if not await is_notification_sent(event_key):
@@ -610,7 +633,7 @@ async def check_and_send_scheduled_alerts(bot):
                 success, _ = await broadcast_message(bot, msg)
                 await mark_notification_sent(event_key, success)
 
-        # 4. Check Score Release Day
+        # Check Official Score Release Day
         days_to_scores = (score_date - today).days
         if days_to_scores == 0:
             event_key = f"{item_id}_score_release_day"
