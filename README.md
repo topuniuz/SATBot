@@ -91,7 +91,7 @@ Open your bot in Telegram and send `/start`!
    git add .
    git commit -m "Initial commit for SAT notify bot"
    git branch -M main
-   git remote add origin https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git
+   git remote add origin https://github.com/topuniuz/SATBot.git
    git push -u origin main
    ```
 
