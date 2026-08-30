@@ -60,7 +60,7 @@ def get_persistent_reply_keyboard() -> ReplyKeyboardMarkup:
     keyboard = [
         [KeyboardButton("📅 SAT Schedule"), KeyboardButton("⏳ Live Countdown")],
         [KeyboardButton("📝 Test-Day Tips"), KeyboardButton("🌍 Timezone")],
-        [KeyboardButton("⚙️ Notification Status"), KeyboardButton("🔗 Score Portal")],
+        [KeyboardButton("📚 SAT Tutors & Prep"), KeyboardButton("⚙️ Status & Alerts")],
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
@@ -77,8 +77,11 @@ def get_main_menu_inline_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("🌍 Set Timezone", callback_data="nav:timezone"),
         ],
         [
-            InlineKeyboardButton("⚙️ Notification Status", callback_data="nav:status"),
-            InlineKeyboardButton("🔗 College Board Portal", url="https://studentscores.collegeboard.org/"),
+            InlineKeyboardButton("📚 SAT Tutors & Prep", callback_data="nav:tutors"),
+            InlineKeyboardButton("⚙️ Status & Alerts", callback_data="nav:status"),
+        ],
+        [
+            InlineKeyboardButton("🌐 College Board Score Portal", url="https://studentscores.collegeboard.org/"),
         ],
     ]
     return InlineKeyboardMarkup(buttons)
@@ -101,7 +104,12 @@ def get_subpage_inline_keyboard(current_page: str, is_subscribed: bool = True) -
     elif current_page == "tips":
         buttons.append([
             InlineKeyboardButton("⏳ View Countdown", callback_data="nav:countdown"),
-            InlineKeyboardButton("📅 Full Schedule", callback_data="nav:schedule"),
+            InlineKeyboardButton("📚 SAT Prep & Tutors", callback_data="nav:tutors"),
+        ])
+    elif current_page == "tutors":
+        buttons.append([
+            InlineKeyboardButton("📝 Test Tips", callback_data="nav:tips"),
+            InlineKeyboardButton("⏳ View Countdown", callback_data="nav:countdown"),
         ])
     elif current_page == "status":
         sub_btn = (
@@ -111,10 +119,9 @@ def get_subpage_inline_keyboard(current_page: str, is_subscribed: bool = True) -
         )
         buttons.append([sub_btn, InlineKeyboardButton("🌍 Change Timezone", callback_data="nav:timezone")])
 
-    # Always provide quick return to Main Menu
     buttons.append([
         InlineKeyboardButton("🏠 Main Dashboard", callback_data="nav:menu"),
-        InlineKeyboardButton("🔗 College Board", url="https://studentscores.collegeboard.org/"),
+        InlineKeyboardButton("🔗 Score Portal", url="https://studentscores.collegeboard.org/"),
     ])
     return InlineKeyboardMarkup(buttons)
 
@@ -250,6 +257,22 @@ async def get_tips_content() -> tuple[str, InlineKeyboardMarkup]:
     return TEMPLATES["tips"], get_subpage_inline_keyboard("tips")
 
 
+async def get_tutors_content() -> tuple[str, InlineKeyboardMarkup]:
+    text = (
+        "📚 <b>SAT PREPARATION & RECOMMENDED TUTORS</b>\n"
+        "────────────────────────\n"
+        "🎯 <b>Official Free Practice:</b>\n"
+        "• <b>Bluebook™:</b> 6 Official full-length adaptive practice exams\n"
+        "• <b>Khan Academy:</b> Official Digital SAT interactive course & video explanations\n"
+        "• <b>College Board Question Bank:</b> Over 3,000+ real practice questions\n\n"
+        "👨‍🏫 <b>Featured SAT Tutors & Channels:</b>\n"
+        "• Are you an SAT tutor or education channel?\n"
+        "• Partner with us to feature your courses, mock exams, and channels here!\n\n"
+        "📩 <i>Contact the bot admin to get your tutoring service or channel featured!</i>"
+    )
+    return text, get_subpage_inline_keyboard("tutors")
+
+
 async def get_status_content(chat_id: int) -> tuple[str, InlineKeyboardMarkup]:
     active_subs = await get_active_subscribers()
     is_sub = chat_id in active_subs
@@ -306,7 +329,7 @@ async def broadcast_message(bot, text: str, parse_mode: str = "HTML") -> tuple[i
                 reply_markup=get_main_menu_inline_keyboard(),
             )
             success += 1
-            await asyncio.sleep(0.05)
+            await asyncio.sleep(0.04)  # 25 msgs/sec for high speed
         except (Forbidden, BadRequest) as e:
             logger.warning("Failed to send message to %s (%s). Deactivating.", chat_id, e)
             await unsubscribe_user(chat_id)
@@ -323,7 +346,7 @@ async def broadcast_message(bot, text: str, parse_mode: str = "HTML") -> tuple[i
 # ---------------------------------------------------------
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handler for /start command."""
+    """Handler for /start command - responds instantly with dashboard."""
     user = update.effective_user
     chat_id = update.effective_chat.id
 
@@ -334,15 +357,16 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     text, inline_kb = await get_dashboard_content(chat_id)
-    # Send persistent reply keyboard AND interactive inline keyboard
+    # Send single snappy response with both keyboards
     await update.message.reply_text(
         text=text,
-        reply_markup=get_persistent_reply_keyboard(),
+        reply_markup=inline_kb,
         parse_mode="HTML",
     )
+    # Ensure bottom reply keyboard is presented
     await update.message.reply_text(
-        text="👇 <b>Quick Actions:</b>",
-        reply_markup=inline_kb,
+        text="👋 Choose an option from the menu below or tap any button above:",
+        reply_markup=get_persistent_reply_keyboard(),
         parse_mode="HTML",
     )
 
@@ -407,10 +431,13 @@ async def handle_text_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE
     elif text == "📝 Test-Day Tips":
         msg, kb = await get_tips_content()
         await update.message.reply_text(msg, reply_markup=kb, parse_mode="HTML")
+    elif text == "📚 SAT Tutors & Prep":
+        msg, kb = await get_tutors_content()
+        await update.message.reply_text(msg, reply_markup=kb, parse_mode="HTML")
     elif text == "🌍 Timezone":
         msg, kb = await get_timezone_menu_content(chat_id)
         await update.message.reply_text(msg, reply_markup=kb, parse_mode="HTML")
-    elif text == "⚙️ Notification Status":
+    elif text in ["⚙️ Notification Status", "⚙️ Status & Alerts"]:
         msg, kb = await get_status_content(chat_id)
         await update.message.reply_text(msg, reply_markup=kb, parse_mode="HTML")
     elif text == "🔗 Score Portal":
@@ -460,6 +487,10 @@ async def inline_callback_router(update: Update, context: ContextTypes.DEFAULT_T
 
     elif data == "nav:tips":
         text, kb = await get_tips_content()
+        await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
+
+    elif data == "nav:tutors":
+        text, kb = await get_tutors_content()
         await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
 
     elif data == "nav:timezone":
@@ -661,6 +692,11 @@ async def background_scheduler_loop(application):
 # MAIN APP ENTRY POINT
 # ---------------------------------------------------------
 
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Log the error and notify user gracefully if update is available."""
+    logger.error("Exception while handling an update: %s", context.error)
+
+
 async def main():
     if not BOT_TOKEN:
         logger.error("CRITICAL: BOT_TOKEN is missing! Set BOT_TOKEN in .env or Render environment variables.")
@@ -673,6 +709,9 @@ async def main():
 
     # Build Telegram Application
     application = ApplicationBuilder().token(BOT_TOKEN).build()
+
+    # Register Error Handler
+    application.add_error_handler(error_handler)
 
     # Command Handlers
     application.add_handler(CommandHandler("start", start_command))

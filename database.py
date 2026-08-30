@@ -7,9 +7,16 @@ from config import DB_PATH
 logger = logging.getLogger(__name__)
 
 
+# In-memory timezone cache for instant lookups without DB queries
+_TIMEZONE_CACHE = {}
+
+
 def _get_db():
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=15)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode = WAL;")
+    conn.execute("PRAGMA synchronous = NORMAL;")
+    conn.execute("PRAGMA busy_timeout = 5000;")
     return conn
 
 
@@ -42,7 +49,7 @@ def _init_db_sync():
             );
         """)
         conn.commit()
-    logger.info("Database initialized successfully at %s", DB_PATH)
+    logger.info("Database initialized with WAL mode at %s", DB_PATH)
 
 
 async def init_db():
@@ -99,6 +106,7 @@ async def unsubscribe_user(chat_id: int) -> bool:
 
 def _set_user_timezone_sync(chat_id: int, tz_str: str) -> bool:
     now = datetime.now(timezone.utc).isoformat()
+    _TIMEZONE_CACHE[chat_id] = tz_str
     with _get_db() as conn:
         cursor = conn.execute("UPDATE subscribers SET timezone = ?, updated_at = ? WHERE chat_id = ?", (tz_str, now, chat_id))
         conn.commit()
@@ -107,20 +115,26 @@ def _set_user_timezone_sync(chat_id: int, tz_str: str) -> bool:
 
 async def set_user_timezone(chat_id: int, tz_str: str) -> bool:
     """Sets a user's timezone."""
+    _TIMEZONE_CACHE[chat_id] = tz_str
     return await asyncio.to_thread(_set_user_timezone_sync, chat_id, tz_str)
 
 
 def _get_user_timezone_sync(chat_id: int) -> str:
+    if chat_id in _TIMEZONE_CACHE:
+        return _TIMEZONE_CACHE[chat_id]
+
     with _get_db() as conn:
         cursor = conn.execute("SELECT timezone FROM subscribers WHERE chat_id = ?", (chat_id,))
         row = cursor.fetchone()
-        if row and row["timezone"]:
-            return row["timezone"]
-        return "US/Eastern"
+        tz = row["timezone"] if row and row["timezone"] else "US/Eastern"
+        _TIMEZONE_CACHE[chat_id] = tz
+        return tz
 
 
 async def get_user_timezone(chat_id: int) -> str:
     """Gets a user's timezone (default: US/Eastern)."""
+    if chat_id in _TIMEZONE_CACHE:
+        return _TIMEZONE_CACHE[chat_id]
     return await asyncio.to_thread(_get_user_timezone_sync, chat_id)
 
 
