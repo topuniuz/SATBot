@@ -21,6 +21,7 @@ from telegram.error import Forbidden, BadRequest
 from config import (
     BOT_TOKEN,
     ADMIN_IDS,
+    ADMIN_CONTACT,
     SAT_SCHEDULE,
     TEMPLATES,
     POPULAR_TIMEZONES,
@@ -60,7 +61,7 @@ def get_persistent_reply_keyboard() -> ReplyKeyboardMarkup:
     keyboard = [
         [KeyboardButton("📅 SAT Schedule"), KeyboardButton("⏳ Live Countdown")],
         [KeyboardButton("📝 Test-Day Tips"), KeyboardButton("🌍 Timezone")],
-        [KeyboardButton("📚 SAT Tutors & Prep"), KeyboardButton("⚙️ Status & Alerts")],
+        [KeyboardButton("📚 SAT Tutors & Prep"), KeyboardButton("💬 Contact Support")],
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
@@ -78,10 +79,11 @@ def get_main_menu_inline_keyboard() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("📚 SAT Tutors & Prep", callback_data="nav:tutors"),
-            InlineKeyboardButton("⚙️ Status & Alerts", callback_data="nav:status"),
+            InlineKeyboardButton("💬 Contact Support", callback_data="nav:contact"),
         ],
         [
-            InlineKeyboardButton("🌐 College Board Score Portal", url="https://studentscores.collegeboard.org/"),
+            InlineKeyboardButton("⚙️ Status & Alerts", callback_data="nav:status"),
+            InlineKeyboardButton("🌐 Score Portal", url="https://studentscores.collegeboard.org/"),
         ],
     ]
     return InlineKeyboardMarkup(buttons)
@@ -108,8 +110,16 @@ def get_subpage_inline_keyboard(current_page: str, is_subscribed: bool = True) -
         ])
     elif current_page == "tutors":
         buttons.append([
+            InlineKeyboardButton("💬 Contact Admin to Feature Tutor", callback_data="nav:contact"),
+        ])
+        buttons.append([
             InlineKeyboardButton("📝 Test Tips", callback_data="nav:tips"),
             InlineKeyboardButton("⏳ View Countdown", callback_data="nav:countdown"),
+        ])
+    elif current_page == "contact":
+        contact_url = f"https://t.me/{ADMIN_CONTACT.lstrip('@')}" if ADMIN_CONTACT.startswith("@") else ADMIN_CONTACT
+        buttons.append([
+            InlineKeyboardButton("💬 Open Chat with Admin", url=contact_url),
         ])
     elif current_page == "status":
         sub_btn = (
@@ -273,6 +283,19 @@ async def get_tutors_content() -> tuple[str, InlineKeyboardMarkup]:
     return text, get_subpage_inline_keyboard("tutors")
 
 
+async def get_contact_content() -> tuple[str, InlineKeyboardMarkup]:
+    text = (
+        "💬 <b>CONTACT & SUPPORT</b>\n"
+        "────────────────────────\n"
+        "Have questions, feedback, or want to partner with us?\n\n"
+        f"👤 <b>Admin Contact:</b> {ADMIN_CONTACT}\n"
+        "📩 <b>Send Message in Bot:</b>\n"
+        "Type <code>/contact &lt;Your message here&gt;</code>\n"
+        "<i>(Our admin team will receive your message and reply directly in this chat!)</i>"
+    )
+    return text, get_subpage_inline_keyboard("contact")
+
+
 async def get_status_content(chat_id: int) -> tuple[str, InlineKeyboardMarkup]:
     active_subs = await get_active_subscribers()
     is_sub = chat_id in active_subs
@@ -434,6 +457,9 @@ async def handle_text_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE
     elif text == "📚 SAT Tutors & Prep":
         msg, kb = await get_tutors_content()
         await update.message.reply_text(msg, reply_markup=kb, parse_mode="HTML")
+    elif text == "💬 Contact Support":
+        msg, kb = await get_contact_content()
+        await update.message.reply_text(msg, reply_markup=kb, parse_mode="HTML")
     elif text == "🌍 Timezone":
         msg, kb = await get_timezone_menu_content(chat_id)
         await update.message.reply_text(msg, reply_markup=kb, parse_mode="HTML")
@@ -491,6 +517,10 @@ async def inline_callback_router(update: Update, context: ContextTypes.DEFAULT_T
 
     elif data == "nav:tutors":
         text, kb = await get_tutors_content()
+        await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
+
+    elif data == "nav:contact":
+        text, kb = await get_contact_content()
         await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
 
     elif data == "nav:timezone":
@@ -586,6 +616,73 @@ async def announce_scores_command(update: Update, context: ContextTypes.DEFAULT_
         f"• Failed: {failed}",
         parse_mode="HTML",
     )
+
+
+async def contact_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler for /contact and /feedback commands."""
+    user = update.effective_user
+    chat_id = update.effective_chat.id
+
+    if not context.args:
+        text, kb = await get_contact_content()
+        await update.message.reply_text(text, reply_markup=kb, parse_mode="HTML")
+        return
+
+    user_message = update.message.text.partition(" ")[2].strip()
+
+    # Forward to Admins
+    if ADMIN_IDS:
+        admin_alert = (
+            "📩 <b>NEW CUSTOMER SUPPORT MESSAGE</b>\n"
+            "────────────────────────\n"
+            f"👤 <b>From:</b> {user.first_name} (@{user.username or 'N/A'})\n"
+            f"🆔 <b>User ID:</b> <code>{chat_id}</code>\n\n"
+            f"💬 <b>Message:</b>\n{user_message}\n\n"
+            f"👉 <b>To reply, type:</b>\n<code>/reply {chat_id} &lt;Your reply&gt;</code>"
+        )
+        for admin_id in ADMIN_IDS:
+            try:
+                await context.bot.send_message(chat_id=admin_id, text=admin_alert, parse_mode="HTML")
+            except Exception as e:
+                logger.error("Failed to forward support message to admin %s: %s", admin_id, e)
+
+    await update.message.reply_text(
+        "✅ <b>Message Sent to Support!</b>\n\n"
+        "Our admin has received your message and will reply to you directly in this bot.",
+        parse_mode="HTML",
+    )
+
+
+async def reply_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin command: /reply <user_id> <message> to reply directly to a customer."""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("⛔ You are not authorized to use this command.")
+        return
+
+    if len(context.args) < 2:
+        await update.message.reply_text("Usage: /reply <user_id> <message>")
+        return
+
+    target_id_str = context.args[0]
+    if not target_id_str.isdigit():
+        await update.message.reply_text("⚠️ Invalid User ID.")
+        return
+
+    target_id = int(target_id_str)
+    reply_text = " ".join(context.args[1:])
+
+    msg_to_user = (
+        "💬 <b>SUPPORT TEAM RESPONSE</b>\n"
+        "────────────────────────\n"
+        f"{reply_text}\n\n"
+        "<i>To send another message, type /contact &lt;message&gt;</i>"
+    )
+
+    try:
+        await context.bot.send_message(chat_id=target_id, text=msg_to_user, parse_mode="HTML")
+        await update.message.reply_text(f"✅ Response successfully delivered to user <code>{target_id}</code>.", parse_mode="HTML")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Failed to deliver message to <code>{target_id}</code>: {e}", parse_mode="HTML")
 
 
 from checker import detect_early_score_release
@@ -720,11 +817,14 @@ async def main():
     application.add_handler(CommandHandler("timezone", timezone_command))
     application.add_handler(CommandHandler("tips", tips_command))
     application.add_handler(CommandHandler("status", status_command))
+    application.add_handler(CommandHandler("contact", contact_command))
+    application.add_handler(CommandHandler("feedback", contact_command))
 
     # Admin Handlers
     application.add_handler(CommandHandler("stats", stats_command))
     application.add_handler(CommandHandler("broadcast", broadcast_command))
     application.add_handler(CommandHandler("announce_scores", announce_scores_command))
+    application.add_handler(CommandHandler("reply", reply_command))
 
     # Inline Button Navigation Router
     application.add_handler(CallbackQueryHandler(inline_callback_router))
