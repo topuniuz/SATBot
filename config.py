@@ -19,7 +19,7 @@ ADMIN_USER_ID = os.getenv("ADMIN_USER_ID", "").strip()
 ADMIN_IDS = [int(i.strip()) for i in ADMIN_USER_ID.split(",") if i.strip().isdigit()]
 
 # Admin Public Contact Username / Handle (for customer support button)
-ADMIN_CONTACT = os.getenv("ADMIN_CONTACT", "@topuniuz").strip()
+ADMIN_CONTACT = os.getenv("ADMIN_CONTACT", "@mx767").strip()
 if ADMIN_CONTACT and not ADMIN_CONTACT.startswith("@") and not ADMIN_CONTACT.startswith("http"):
     ADMIN_CONTACT = f"@{ADMIN_CONTACT}"
 
