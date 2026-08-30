@@ -1,10 +1,11 @@
 import asyncio
 import logging
 from datetime import datetime, date
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
+    CallbackQueryHandler,
     ContextTypes,
 )
 from telegram.error import Forbidden, BadRequest
@@ -14,7 +15,8 @@ from config import (
     ADMIN_IDS,
     SAT_SCHEDULE,
     TEMPLATES,
-    TIMEZONE,
+    POPULAR_TIMEZONES,
+    get_user_zoneinfo,
     get_current_date,
     get_next_test,
     get_next_score_release,
@@ -24,6 +26,8 @@ from database import (
     init_db,
     add_or_reactivate_subscriber,
     unsubscribe_user,
+    set_user_timezone,
+    get_user_timezone,
     get_active_subscribers,
     get_subscriber_stats,
     is_notification_sent,
@@ -83,14 +87,19 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def schedule_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler for /schedule command."""
-    upcoming = get_upcoming_tests(limit=6)
-    today = get_current_date()
+    chat_id = update.effective_chat.id
+    user_tz = await get_user_timezone(chat_id)
+    upcoming = get_upcoming_tests(limit=6, tz_name=user_tz)
+    today = get_current_date(user_tz)
 
     if not upcoming:
         await update.message.reply_text("No upcoming SAT dates found in the schedule.")
         return
 
-    lines = ["📅 <b>Upcoming SAT Testing Schedule & Score Releases:</b>\n"]
+    lines = [
+        "📅 <b>Official College Board SAT Schedule:</b>\n"
+        f"<i>(Calculated for your timezone: {user_tz})</i>\n"
+    ]
     for item in upcoming:
         test_d = item["test_date"]
         score_d = item["score_release_date"]
@@ -100,20 +109,25 @@ async def schedule_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lines.append(
             f"🎓 <b>{item['name']}</b>\n"
             f"  • Exam Date: {test_badge}\n"
-            f"  • Expected Scores: {score_badge}\n"
+            f"  • Score Release: {score_badge}\n"
         )
 
-    lines.append("<i>All times and release batches follow College Board US/Eastern time.</i>")
+    lines.append("<i>Dates follow official College Board testing calendar.</i>")
     await update.message.reply_text("\n".join(lines), parse_mode="HTML")
 
 
 async def countdown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler for /countdown command."""
-    today = get_current_date()
-    next_test = get_next_test()
-    next_score = get_next_score_release()
+    chat_id = update.effective_chat.id
+    user_tz = await get_user_timezone(chat_id)
+    today = get_current_date(user_tz)
+    next_test = get_next_test(user_tz)
+    next_score = get_next_score_release(user_tz)
 
-    lines = ["⏳ <b>SAT Live Countdowns:</b>\n"]
+    lines = [
+        "⏳ <b>SAT Live Countdowns:</b>\n"
+        f"<i>(Your Timezone: {user_tz})</i>\n"
+    ]
 
     if next_test:
         days_until_test = (next_test["test_date"] - today).days
@@ -139,8 +153,85 @@ async def countdown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         lines.append("📢 <b>Next Score Release:</b> No upcoming score releases listed.\n")
 
-    lines.append("Use /schedule for full calendar or /tips for exam checklists.")
+    lines.append("Use /schedule for full calendar, /timezone to change timezone, or /tips for exam checklists.")
     await update.message.reply_text("\n".join(lines), parse_mode="HTML")
+
+
+async def timezone_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler for /timezone command to view and set timezone."""
+    chat_id = update.effective_chat.id
+    current_tz = await get_user_timezone(chat_id)
+
+    # Check if user passed arguments: /timezone Asia/Tashkent
+    if context.args:
+        custom_tz = context.args[0].strip()
+        try:
+            # Validate timezone
+            _ = get_user_zoneinfo(custom_tz)
+            await set_user_timezone(chat_id, custom_tz)
+            now_str = datetime.now(get_user_zoneinfo(custom_tz)).strftime("%Y-%m-%d %H:%M:%S")
+            await update.message.reply_text(
+                f"✅ <b>Timezone Updated!</b>\n\n"
+                f"🌍 <b>Your Timezone:</b> <code>{custom_tz}</code>\n"
+                f"🕒 <b>Current Time:</b> {now_str}",
+                parse_mode="HTML",
+            )
+            return
+        except Exception:
+            await update.message.reply_text(
+                f"⚠️ Invalid timezone <code>{custom_tz}</code>. Please select from the menu below or provide a valid IANA timezone.",
+                parse_mode="HTML",
+            )
+
+    # Build Interactive Keyboard for popular timezones
+    buttons = []
+    for label, tz_code in POPULAR_TIMEZONES:
+        prefix = "✅ " if tz_code == current_tz else ""
+        buttons.append([InlineKeyboardButton(f"{prefix}{label}", callback_data=f"set_tz:{tz_code}")])
+
+    keyboard = InlineKeyboardMarkup(buttons)
+    now_str = datetime.now(get_user_zoneinfo(current_tz)).strftime("%Y-%m-%d %H:%M:%S")
+
+    text = (
+        "🌍 <b>Select Your Timezone</b>\n\n"
+        f"Current Timezone: <b>{current_tz}</b>\n"
+        f"Local Time: <b>{now_str}</b>\n\n"
+        "Tap a timezone below to update, or type:\n"
+        "<code>/timezone &lt;Timezone_Name&gt;</code> (e.g. <code>/timezone Asia/Tashkent</code>)"
+    )
+    await update.message.reply_text(text, reply_markup=keyboard, parse_mode="HTML")
+
+
+async def timezone_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles timezone inline button selections."""
+    query = update.callback_query
+    await query.answer()
+
+    data = query.data
+    if not data or not data.startswith("set_tz:"):
+        return
+
+    tz_code = data.split(":", 1)[1]
+    chat_id = update.effective_chat.id
+
+    await set_user_timezone(chat_id, tz_code)
+    now_str = datetime.now(get_user_zoneinfo(tz_code)).strftime("%Y-%m-%d %H:%M:%S")
+
+    # Re-render keyboard with updated checkmark
+    buttons = []
+    for label, code in POPULAR_TIMEZONES:
+        prefix = "✅ " if code == tz_code else ""
+        buttons.append([InlineKeyboardButton(f"{prefix}{label}", callback_data=f"set_tz:{code}")])
+
+    keyboard = InlineKeyboardMarkup(buttons)
+
+    text = (
+        "🌍 <b>Timezone Updated Successfully!</b>\n\n"
+        f"Selected Timezone: <b>{tz_code}</b>\n"
+        f"Current Local Time: <b>{now_str}</b>\n\n"
+        "Tap below to change anytime, or use /countdown to check SAT dates."
+    )
+    await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
 
 
 async def tips_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -153,23 +244,19 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     active_subs = await get_active_subscribers()
     is_sub = chat_id in active_subs
+    user_tz = await get_user_timezone(chat_id)
 
-    if is_sub:
-        msg = (
-            "🔔 <b>Notification Status: ACTIVE</b>\n\n"
-            "You will automatically receive:\n"
-            "• 7-day test preparation reminders\n"
-            "• 1-day before test checklist\n"
-            "• Exam morning good luck wishes\n"
-            "• Score release day morning announcements\n\n"
-            "To pause alerts, type /unsubscribe"
-        )
-    else:
-        msg = (
-            "🔕 <b>Notification Status: PAUSED / INACTIVE</b>\n\n"
-            "You are currently not receiving automated reminders.\n"
-            "To turn notifications back on, type /subscribe"
-        )
+    status_str = "ACTIVE 🔔" if is_sub else "PAUSED 🔕"
+    msg = (
+        f"⚙️ <b>Your Notification Status: {status_str}</b>\n"
+        f"🌍 <b>Active Timezone:</b> <code>{user_tz}</code> (change with /timezone)\n\n"
+        "<b>Automated alerts you receive:</b>\n"
+        "• 7-day test preparation reminders & Bluebook setup\n"
+        "• 1-day before test checklist (ID, calculator, charger)\n"
+        "• Exam morning good luck wishes\n"
+        "• Official Score release day morning announcements\n\n"
+        f"{'To pause alerts, type /unsubscribe' if is_sub else 'To resume alerts, type /subscribe'}"
+    )
     await update.message.reply_text(msg, parse_mode="HTML")
 
 
@@ -224,7 +311,6 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Usage: /broadcast <Your message here>")
         return
 
-    # Extract text preserving formatting
     text = update.message.text.partition(" ")[2].strip()
     status_msg = await update.message.reply_text("🚀 Starting broadcast...")
 
@@ -365,7 +451,6 @@ async def background_scheduler_loop(application):
             await check_and_send_scheduled_alerts(application.bot)
         except Exception as e:
             logger.error("Error in background scheduler loop: %s", e)
-        # Wait 30 minutes before checking again (1800 seconds)
         await asyncio.sleep(1800)
 
 
@@ -388,10 +473,14 @@ async def main():
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("schedule", schedule_command))
     application.add_handler(CommandHandler("countdown", countdown_command))
+    application.add_handler(CommandHandler("timezone", timezone_command))
     application.add_handler(CommandHandler("tips", tips_command))
     application.add_handler(CommandHandler("status", status_command))
     application.add_handler(CommandHandler("subscribe", subscribe_command))
     application.add_handler(CommandHandler("unsubscribe", unsubscribe_command))
+
+    # Add Callback Query Handlers (for interactive timezone buttons)
+    application.add_handler(CallbackQueryHandler(timezone_callback_handler, pattern=r"^set_tz:"))
 
     # Add Admin Handlers
     application.add_handler(CommandHandler("stats", stats_command))

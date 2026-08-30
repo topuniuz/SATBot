@@ -173,32 +173,66 @@ SAT_SCHEDULE = [
 ]
 
 
-def get_current_date() -> date:
-    """Returns today's date in College Board timezone (US/Eastern)."""
-    return datetime.now(TIMEZONE).date()
+# Popular timezones for user selection
+POPULAR_TIMEZONES = [
+    ("🇺🇸 US Eastern (New York, ET)", "US/Eastern"),
+    ("🇺🇸 US Central (Chicago, CT)", "US/Central"),
+    ("🇺🇸 US Mountain (Denver, MT)", "US/Mountain"),
+    ("🇺🇸 US Pacific (LA, PT)", "US/Pacific"),
+    ("🇬🇧 UK / London (GMT/BST)", "Europe/London"),
+    ("🇪🇺 Central Europe (Paris, Berlin)", "Europe/Paris"),
+    ("🇹🇷 Turkey (Istanbul)", "Europe/Istanbul"),
+    ("🇦🇪 UAE (Dubai, GST)", "Asia/Dubai"),
+    ("🇺🇿 Uzbekistan (Tashkent, UZT)", "Asia/Tashkent"),
+    ("🇰🇿 Kazakhstan (Almaty, ALMT)", "Asia/Almaty"),
+    ("🇵🇰 Pakistan (Karachi, PKT)", "Asia/Karachi"),
+    ("🇮🇳 India (Kolkata, IST)", "Asia/Kolkata"),
+    ("🇦🇿 Azerbaijan (Baku, AZT)", "Asia/Baku"),
+    ("🇸🇬 Singapore (SGT)", "Asia/Singapore"),
+    ("🇰🇷 Korea / Japan (KST/JST)", "Asia/Seoul"),
+    ("🌐 UTC", "UTC"),
+]
 
 
-def get_next_test() -> dict | None:
+def get_user_zoneinfo(tz_name: str):
+    """Safely returns ZoneInfo for a timezone string, falling back to US/Eastern."""
+    try:
+        return ZoneInfo(tz_name)
+    except Exception:
+        try:
+            return ZoneInfo("US/Eastern")
+        except Exception:
+            import datetime
+            return datetime.timezone.utc
+
+
+def get_current_date(tz_name: str = None) -> date:
+    """Returns today's date in specified timezone or default US/Eastern."""
+    tz = get_user_zoneinfo(tz_name) if tz_name else TIMEZONE
+    return datetime.now(tz).date()
+
+
+def get_next_test(tz_name: str = None) -> dict | None:
     """Returns the next upcoming SAT test event."""
-    today = get_current_date()
+    today = get_current_date(tz_name)
     for item in SAT_SCHEDULE:
         if item["test_date"] >= today:
             return item
     return None
 
 
-def get_next_score_release() -> dict | None:
+def get_next_score_release(tz_name: str = None) -> dict | None:
     """Returns the next upcoming score release event."""
-    today = get_current_date()
+    today = get_current_date(tz_name)
     for item in SAT_SCHEDULE:
         if item["score_release_date"] >= today:
             return item
     return None
 
 
-def get_upcoming_tests(limit: int = 5) -> list[dict]:
+def get_upcoming_tests(limit: int = 5, tz_name: str = None) -> list[dict]:
     """Returns a list of upcoming tests starting from today."""
-    today = get_current_date()
+    today = get_current_date(tz_name)
     upcoming = [item for item in SAT_SCHEDULE if item["test_date"] >= today or item["score_release_date"] >= today]
     return upcoming[:limit]
 
@@ -209,11 +243,12 @@ TEMPLATES = {
         "👋 <b>Welcome to SAT Notify Bot!</b>\n\n"
         "I will keep you updated with:\n"
         "✨ <b>Good luck wishes & test-day checklist</b> before every SAT exam\n"
-        "📢 <b>Instant score release alerts</b> when College Board drops scores\n"
+        "📢 <b>Instant score release alerts</b> on official College Board release days\n"
         "⏳ <b>Live countdowns</b> to upcoming SAT exams\n\n"
         "<b>Available Commands:</b>\n"
-        "📅 /schedule - View all upcoming SAT dates\n"
+        "📅 /schedule - View official College Board SAT dates\n"
         "⏳ /countdown - Countdown to next exam & score release\n"
+        "🌍 /timezone - Change your personal timezone\n"
         "📝 /tips - Essential Digital SAT test-day checklist\n"
         "⚙️ /status - Check your notification status\n"
         "🔕 /unsubscribe - Pause notifications\n"

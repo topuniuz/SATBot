@@ -20,11 +20,19 @@ def _init_db_sync():
                 chat_id INTEGER PRIMARY KEY,
                 username TEXT,
                 first_name TEXT,
+                timezone TEXT DEFAULT 'US/Eastern',
                 is_active INTEGER DEFAULT 1,
                 subscribed_at TIMESTAMP,
                 updated_at TIMESTAMP
             );
         """)
+        
+        # Check if timezone column exists (for seamless migration)
+        cursor = conn.execute("PRAGMA table_info(subscribers)")
+        columns = [row["name"] for row in cursor.fetchall()]
+        if "timezone" not in columns:
+            conn.execute("ALTER TABLE subscribers ADD COLUMN timezone TEXT DEFAULT 'US/Eastern'")
+
         conn.execute("""
             CREATE TABLE IF NOT EXISTS sent_notifications (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -87,6 +95,33 @@ def _unsubscribe_user_sync(chat_id: int) -> bool:
 async def unsubscribe_user(chat_id: int) -> bool:
     """Deactivates notifications for a user."""
     return await asyncio.to_thread(_unsubscribe_user_sync, chat_id)
+
+
+def _set_user_timezone_sync(chat_id: int, tz_str: str) -> bool:
+    now = datetime.now(timezone.utc).isoformat()
+    with _get_db() as conn:
+        cursor = conn.execute("UPDATE subscribers SET timezone = ?, updated_at = ? WHERE chat_id = ?", (tz_str, now, chat_id))
+        conn.commit()
+        return cursor.rowcount > 0
+
+
+async def set_user_timezone(chat_id: int, tz_str: str) -> bool:
+    """Sets a user's timezone."""
+    return await asyncio.to_thread(_set_user_timezone_sync, chat_id, tz_str)
+
+
+def _get_user_timezone_sync(chat_id: int) -> str:
+    with _get_db() as conn:
+        cursor = conn.execute("SELECT timezone FROM subscribers WHERE chat_id = ?", (chat_id,))
+        row = cursor.fetchone()
+        if row and row["timezone"]:
+            return row["timezone"]
+        return "US/Eastern"
+
+
+async def get_user_timezone(chat_id: int) -> str:
+    """Gets a user's timezone (default: US/Eastern)."""
+    return await asyncio.to_thread(_get_user_timezone_sync, chat_id)
 
 
 def _get_active_subscribers_sync() -> list[int]:

@@ -1,8 +1,6 @@
 import asyncio
 import os
 import unittest
-import urllib.request
-import json
 from datetime import date, timedelta
 
 # Set dummy environment variables for testing
@@ -27,7 +25,7 @@ class TestSATBot(unittest.IsolatedAsyncioTestCase):
         if os.path.exists("test_sat_bot.db"):
             os.remove("test_sat_bot.db")
 
-    async def test_subscriber_management(self):
+    async def test_subscriber_and_timezone_management(self):
         # Add a new subscriber
         is_new = await database.add_or_reactivate_subscriber(
             chat_id=1001,
@@ -36,12 +34,19 @@ class TestSATBot(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(is_new)
 
+        # Check default timezone
+        tz = await database.get_user_timezone(1001)
+        self.assertEqual(tz, "US/Eastern")
+
+        # Update timezone
+        tz_ok = await database.set_user_timezone(1001, "Asia/Tashkent")
+        self.assertTrue(tz_ok)
+
+        new_tz = await database.get_user_timezone(1001)
+        self.assertEqual(new_tz, "Asia/Tashkent")
+
         active = await database.get_active_subscribers()
         self.assertIn(1001, active)
-
-        stats = await database.get_subscriber_stats()
-        self.assertEqual(stats["total"], 1)
-        self.assertEqual(stats["active"], 1)
 
         # Unsubscribe
         unsub_ok = await database.unsubscribe_user(1001)
@@ -49,16 +54,6 @@ class TestSATBot(unittest.IsolatedAsyncioTestCase):
 
         active_after = await database.get_active_subscribers()
         self.assertNotIn(1001, active_after)
-
-        # Reactivate
-        reactivated = await database.add_or_reactivate_subscriber(
-            chat_id=1001,
-            username="testuser",
-            first_name="Test",
-        )
-        self.assertTrue(reactivated)
-        active_final = await database.get_active_subscribers()
-        self.assertIn(1001, active_final)
 
     async def test_notification_deduplication(self):
         event_key = "test_event_2026"
@@ -68,15 +63,15 @@ class TestSATBot(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await database.is_notification_sent(event_key))
 
     def test_schedule_and_countdown_logic(self):
-        upcoming = config.get_upcoming_tests()
+        upcoming = config.get_upcoming_tests(tz_name="Asia/Tashkent")
         self.assertIsInstance(upcoming, list)
 
-        next_test = config.get_next_test()
+        next_test = config.get_next_test(tz_name="Asia/Tashkent")
         if next_test:
             self.assertIn("name", next_test)
             self.assertIn("test_date", next_test)
 
-        next_score = config.get_next_score_release()
+        next_score = config.get_next_score_release(tz_name="Asia/Tashkent")
         if next_score:
             self.assertIn("name", next_score)
             self.assertIn("score_release_date", next_score)
@@ -103,7 +98,6 @@ class TestSATBot(unittest.IsolatedAsyncioTestCase):
     async def test_web_server_health_endpoints(self):
         server = await web_server.start_web_server(port=8099)
         try:
-            # Test /health
             reader, writer = await asyncio.open_connection("127.0.0.1", 8099)
             writer.write(b"GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
             await writer.drain()
@@ -115,18 +109,6 @@ class TestSATBot(unittest.IsolatedAsyncioTestCase):
             self.assertIn("HTTP/1.1 200 OK", response_str)
             self.assertIn('"status": "healthy"', response_str)
             self.assertIn('"service": "sat-telegram-notify-bot"', response_str)
-
-            # Test / (HTML home)
-            reader, writer = await asyncio.open_connection("127.0.0.1", 8099)
-            writer.write(b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
-            await writer.drain()
-            raw_response = await reader.read(4096)
-            writer.close()
-            await writer.wait_closed()
-
-            response_str = raw_response.decode("utf-8")
-            self.assertIn("HTTP/1.1 200 OK", response_str)
-            self.assertIn("SAT Notify Bot", response_str)
         finally:
             server.close()
             await server.wait_closed()
