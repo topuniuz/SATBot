@@ -37,6 +37,22 @@ except Exception:
 # SQLite Database path
 DB_PATH = os.getenv("DB_PATH", "sat_bot.db")
 
+# Telegram Custom Emoji IDs (from packs like TgAndroidIcons)
+CUSTOM_EMOJIS = {
+    "default": "5899757765743615694",
+    "sparkles": "5899757765743615694",
+    "star": "5899757765743615694",
+}
+
+
+def custom_emoji(key: str, fallback: str = "✨") -> str:
+    """Returns <tg-emoji emoji-id="...">fallback</tg-emoji> for custom emoji packs."""
+    emoji_id = CUSTOM_EMOJIS.get(key, CUSTOM_EMOJIS.get("default"))
+    if emoji_id:
+        return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
+    return fallback
+
+
 # Official College Board SAT Testing & Score Release Schedule
 # Source: https://satsuite.collegeboard.org/scores/score-release-dates & https://satsuite.collegeboard.org/sat/dates-deadlines
 SAT_SCHEDULE = [
