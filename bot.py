@@ -504,14 +504,42 @@ async def timezone_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text, reply_markup=kb, parse_mode="HTML")
 
 
+# Admin states for interactive broadcast flow
+_ADMIN_STATES: dict[int, str] = {}
+_PENDING_BROADCASTS: dict[int, str] = {}
+
+
 # ---------------------------------------------------------
 # TEXT MESSAGE ROUTER (For Persistent Reply Keyboard Buttons)
 # ---------------------------------------------------------
 
 async def handle_text_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handles taps on persistent bottom reply keyboard buttons."""
+    """Handles taps on persistent bottom reply keyboard buttons and admin text inputs."""
     text = update.message.text.strip()
     chat_id = update.effective_chat.id
+
+    # Check if admin is sending a broadcast message
+    if is_admin(chat_id) and _ADMIN_STATES.get(chat_id) == "awaiting_broadcast":
+        _ADMIN_STATES.pop(chat_id, None)
+        _PENDING_BROADCASTS[chat_id] = text
+
+        stats = await get_subscriber_stats()
+        active_count = stats.get("active", 0)
+
+        preview_msg = (
+            "📢 <b>BROADCAST PREVIEW & CONFIRMATION</b>\n"
+            "────────────────────────\n"
+            f"{text}\n"
+            "────────────────────────\n"
+            f"👥 <b>Target Recipients:</b> <code>{active_count} active users</code>\n\n"
+            "⚠️ <i>Do you want to send this broadcast to all subscribers now?</i>"
+        )
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🚀 Send Broadcast Now", callback_data="admin:confirm_broadcast")],
+            [InlineKeyboardButton("❌ Cancel", callback_data="admin:panel")],
+        ])
+        await update.message.reply_text(preview_msg, reply_markup=kb, parse_mode="HTML")
+        return
 
     if text == "📅 SAT Schedule":
         msg, kb = await get_schedule_content(chat_id)
@@ -651,17 +679,45 @@ async def inline_callback_router(update: Update, context: ContextTypes.DEFAULT_T
         if not is_admin(chat_id):
             await query.answer("⛔ Unauthorized", show_alert=True)
             return
+        _ADMIN_STATES[chat_id] = "awaiting_broadcast"
         text = (
             "📢 <b>BROADCAST TO ALL SUBSCRIBERS</b>\n"
             "────────────────────────\n"
-            "To send a message to all users, type:\n\n"
-            "<code>/broadcast Your message text here</code>\n\n"
-            "<i>Supports HTML formatting like &lt;b&gt;bold&lt;/b&gt; and &lt;a href='...'&gt;links&lt;/a&gt;.</i>"
+            "✍️ <b>Please send the message you want to broadcast below:</b>\n\n"
+            "<i>(You can type standard text, paste an announcement, or use bold/links. You do NOT need to type /broadcast)</i>"
         )
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("👑 Back to Admin Panel", callback_data="admin:panel")],
+            [InlineKeyboardButton("❌ Cancel Broadcast", callback_data="admin:cancel_broadcast")],
         ])
         await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
+
+    elif data == "admin:cancel_broadcast":
+        _ADMIN_STATES.pop(chat_id, None)
+        _PENDING_BROADCASTS.pop(chat_id, None)
+        text, kb = await get_admin_panel_content()
+        await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
+
+    elif data == "admin:confirm_broadcast":
+        if not is_admin(chat_id):
+            await query.answer("⛔ Unauthorized", show_alert=True)
+            return
+        broadcast_text = _PENDING_BROADCASTS.pop(chat_id, None)
+        if not broadcast_text:
+            await query.answer("⚠️ No pending message found to broadcast.", show_alert=True)
+            text, kb = await get_admin_panel_content()
+            await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
+            return
+
+        await query.edit_message_text("🚀 <b>Broadcasting message to all subscribers in real-time...</b>", parse_mode="HTML")
+        success, failed = await broadcast_message(context.bot, broadcast_text)
+        result_msg = (
+            "✅ <b>BROADCAST COMPLETED</b>\n"
+            "────────────────────────\n"
+            f"• 📤 <b>Successfully Delivered:</b> <code>{success} users</code>\n"
+            f"• ⚠️ <b>Failed / Inactive:</b> <code>{failed}</code>\n"
+        )
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("👑 Back to Admin Panel", callback_data="admin:panel")]])
+        await query.edit_message_text(result_msg, reply_markup=kb, parse_mode="HTML")
 
     elif data == "admin:announce_scores":
         if not is_admin(chat_id):
@@ -747,12 +803,21 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Admin command: Broadcast custom message to subscribers."""
-    if not is_admin(update.effective_user.id):
+    chat_id = update.effective_chat.id
+    if not is_admin(chat_id):
         await update.message.reply_text("⛔ You are not authorized to use this command.")
         return
 
     if not context.args:
-        await update.message.reply_text("Usage: /broadcast <Your message here>")
+        _ADMIN_STATES[chat_id] = "awaiting_broadcast"
+        await update.message.reply_text(
+            "📢 <b>BROADCAST TO ALL SUBSCRIBERS</b>\n"
+            "────────────────────────\n"
+            "✍️ <b>Please send the message you want to broadcast below:</b>\n\n"
+            "<i>(You can type standard text, paste an announcement, or use bold/links)</i>",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="admin:cancel_broadcast")]]),
+            parse_mode="HTML",
+        )
         return
 
     text = update.message.text.partition(" ")[2].strip()
