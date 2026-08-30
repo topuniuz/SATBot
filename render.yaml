@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: sat-notify-bot
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    plan: free
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: ADMIN_USER_ID
+        sync: false
+      - key: TIMEZONE
+        value: US/Eastern
+      - key: PORT
+        value: 8080
