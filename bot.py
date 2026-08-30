@@ -7,12 +7,16 @@ from telegram import (
     InlineKeyboardMarkup,
     ReplyKeyboardMarkup,
     KeyboardButton,
+    InlineQueryResultArticle,
+    InputTextMessageContent,
 )
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     CallbackQueryHandler,
     MessageHandler,
+    InlineQueryHandler,
+    ChatMemberHandler,
     ContextTypes,
     filters,
 )
@@ -855,6 +859,115 @@ async def reply_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Failed to deliver message to <code>{target_id}</code>: {e}", parse_mode="HTML")
 
 
+# ---------------------------------------------------------
+# INLINE MODE & GROUP CHAT HANDLERS
+# ---------------------------------------------------------
+
+async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles inline queries (@BotUsername in any chat or group)."""
+    today = get_current_date()
+    next_test = get_next_test()
+    next_score = get_next_score_release()
+
+    bot_user = context.bot.username or "SATBot"
+
+    # 1. Countdown Article
+    days_to_test = (next_test["test_date"] - today).days if next_test else 0
+    days_to_score = (next_score["score_release_date"] - today).days if next_score else 0
+
+    countdown_text = (
+        "⏳ <b>SAT LIVE COUNTDOWNS</b>\n"
+        "────────────────────────\n"
+        f"📝 <b>Next Exam:</b> {next_test['name'] if next_test else 'None'}\n"
+        f"   ↳ <b>{days_to_test} days</b> remaining ({next_test['test_date'].strftime('%b %d, %Y') if next_test else 'N/A'})\n\n"
+        f"📢 <b>Next Score Release:</b> {next_score['name'] if next_score else 'None'}\n"
+        f"   ↳ <b>{days_to_score} days</b> remaining ({next_score['score_release_date'].strftime('%b %d, %Y') if next_score else 'N/A'})\n\n"
+        "<i>Track live SAT alerts & countdowns on Telegram!</i>"
+    )
+    countdown_kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🤖 Open SAT Bot", url=f"https://t.me/{bot_user}?start=inline")],
+        [InlineKeyboardButton("🌐 College Board Score Portal", url="https://studentscores.collegeboard.org/")],
+    ])
+
+    # 2. Schedule Article
+    upcoming = get_upcoming_tests(limit=5)
+    sched_lines = ["📅 <b>OFFICIAL SAT TESTING SCHEDULE</b>\n────────────────────────\n"]
+    for item in upcoming:
+        sched_lines.append(f"🎓 <b>{item['name']}</b>\n  • Test Date: <b>{item['test_date'].strftime('%b %d, %Y')}</b>\n  • Score Release: <b>{item['score_release_date'].strftime('%b %d, %Y')}</b>\n")
+    sched_text = "\n".join(sched_lines)
+
+    # 3. Test-Day Checklist Article
+    tips_text = TEMPLATES["tips"]
+
+    results = [
+        InlineQueryResultArticle(
+            id="sat_countdown",
+            title="⏳ SAT Exam & Score Countdown",
+            description=f"Next SAT: {days_to_test} days | Next Scores: {days_to_score} days",
+            input_message_content=InputTextMessageContent(countdown_text, parse_mode="HTML"),
+            reply_markup=countdown_kb,
+        ),
+        InlineQueryResultArticle(
+            id="sat_schedule",
+            title="📅 Official SAT Testing Schedule",
+            description="View all 2026-2027 SAT test dates & score release dates",
+            input_message_content=InputTextMessageContent(sched_text, parse_mode="HTML"),
+            reply_markup=countdown_kb,
+        ),
+        InlineQueryResultArticle(
+            id="sat_tips",
+            title="🎒 Digital SAT Test-Day Checklist",
+            description="Bluebook readiness, calculator rules, what to bring",
+            input_message_content=InputTextMessageContent(tips_text, parse_mode="HTML"),
+            reply_markup=countdown_kb,
+        ),
+    ]
+
+    await update.inline_query.answer(results, cache_time=60, is_personal=True)
+
+
+async def chat_member_update_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles bot being added to groups or supergroups."""
+    chat = update.effective_chat
+    if not chat or chat.type not in ["group", "supergroup"]:
+        return
+
+    # Add group chat_id to subscribers database
+    await add_or_reactivate_subscriber(
+        chat_id=chat.id,
+        username=chat.title or chat.username or "Group",
+        first_name=chat.title or "SAT Study Group",
+    )
+
+    welcome_msg = (
+        "👋 <b>Hello Everyone! SAT Notify Bot is now active in this group!</b>\n"
+        "────────────────────────\n"
+        "This group will now automatically receive:\n"
+        "✨ <b>Test-Day Reminders & Checklists</b> (7 days & 1 day before exam)\n"
+        "🌟 <b>Exam Morning Motivation</b>\n"
+        "📢 <b>Instant Score Release Drops</b> on release days\n\n"
+        "<b>Group Commands:</b>\n"
+        "• /countdown - Live countdown to next exam & score drop\n"
+        "• /schedule - Official College Board SAT calendar\n"
+        "• /tips - Digital SAT checklist & pacing strategies\n"
+        "• /timezone - Set group timezone"
+    )
+    group_kb = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("⏳ Live Countdown", callback_data="nav:countdown"),
+            InlineKeyboardButton("📅 SAT Schedule", callback_data="nav:schedule"),
+        ],
+        [
+            InlineKeyboardButton("🌐 Score Portal", url="https://studentscores.collegeboard.org/"),
+        ],
+    ])
+
+    try:
+        await context.bot.send_message(chat_id=chat.id, text=welcome_msg, reply_markup=group_kb, parse_mode="HTML")
+    except Exception as e:
+        logger.error("Failed to send welcome message to group %s: %s", chat.id, e)
+
+
 from checker import detect_early_score_release
 
 
@@ -999,6 +1112,12 @@ async def main():
 
     # Inline Button Navigation Router
     application.add_handler(CallbackQueryHandler(inline_callback_router))
+
+    # Inline Mode Query Handler (@BotUsername in any chat)
+    application.add_handler(InlineQueryHandler(inline_query_handler))
+
+    # Group Join / Chat Member Update Handler
+    application.add_handler(ChatMemberHandler(chat_member_update_handler, ChatMemberHandler.MY_CHAT_MEMBER))
 
     # Persistent Text Buttons Message Router
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_buttons))
