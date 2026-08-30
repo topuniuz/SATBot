@@ -1193,27 +1193,40 @@ async def main():
     from web_server import set_telegram_app
     set_telegram_app(application)
 
-    async with application:
-        await application.start()
+    # Initialize Telegram Application
+    await application.initialize()
+    await application.start()
 
-        webhook_base = os.getenv("WEBHOOK_URL", os.getenv("RENDER_EXTERNAL_URL", "")).rstrip("/")
-        if webhook_base:
-            webhook_url = f"{webhook_base}/webhook"
-            await application.bot.set_webhook(url=webhook_url, drop_pending_updates=True)
-            logger.info("Telegram Webhook active on: %s", webhook_url)
-        else:
-            await application.updater.start_polling(drop_pending_updates=True)
-            logger.info("Telegram Polling active.")
-
-        scheduler_task = asyncio.create_task(background_scheduler_loop(application))
+    webhook_base = os.getenv("WEBHOOK_URL", os.getenv("RENDER_EXTERNAL_URL", "")).rstrip("/")
+    if webhook_base:
+        webhook_url = f"{webhook_base}/webhook"
         try:
-            await scheduler_task
-        except asyncio.CancelledError:
-            pass
-        finally:
-            if not webhook_base and application.updater:
-                await application.updater.stop()
+            await application.bot.set_webhook(url=webhook_url, drop_pending_updates=True)
+            logger.info("Telegram Webhook successfully set to: %s", webhook_url)
+        except Exception as e:
+            logger.error("Failed to set webhook: %s. Falling back to polling.", e)
+            webhook_base = ""
+            await application.updater.start_polling(drop_pending_updates=True)
+    else:
+        await application.updater.start_polling(drop_pending_updates=True)
+        logger.info("Telegram Polling started.")
+
+    scheduler_task = asyncio.create_task(background_scheduler_loop(application))
+
+    # Keep bot running until shutdown signal
+    stop_signal = asyncio.Event()
+    try:
+        await stop_signal.wait()
+    except (asyncio.CancelledError, KeyboardInterrupt):
+        logger.info("Shutdown signal received...")
+    finally:
+        scheduler_task.cancel()
+        if not webhook_base and application.updater and application.updater.running:
+            await application.updater.stop()
+        if application.running:
             await application.stop()
+        await application.shutdown()
+        logger.info("Application shutdown complete.")
 
 
 if __name__ == "__main__":
