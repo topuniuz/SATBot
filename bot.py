@@ -212,12 +212,11 @@ async def get_dashboard_content(chat_id: int) -> tuple[str, InlineKeyboardMarkup
     next_score_str = f"{next_score['name']} ({next_score['score_release_date'].strftime('%b %d, %Y')})" if next_score else "None listed"
 
     text = (
-        "✨ <b>SAT NOTIFY DASHBOARD</b> ✨\n"
-        "────────────────────────\n"
-        f"🌍 <b>Your Timezone:</b> <code>{user_tz}</code>\n"
-        f"📅 <b>Next SAT Exam:</b> {next_test_str}\n"
-        f"📢 <b>Next Score Release:</b> {next_score_str}\n\n"
-        "<i>Tap any button below for instant updates, checklists, and countdowns:</i>"
+        "✨ <b>SAT Notify Dashboard</b>\n\n"
+        f"🌍 <b>Timezone:</b> <code>{user_tz}</code>\n"
+        f"📅 <b>Next Exam:</b> {next_test_str}\n"
+        f"📢 <b>Next Scores:</b> {next_score_str}\n\n"
+        "<i>Pick an action below:</i>"
     )
     return text, get_main_menu_inline_keyboard(is_user_admin=user_is_admin)
 
@@ -228,18 +227,17 @@ async def get_admin_panel_content() -> tuple[str, InlineKeyboardMarkup]:
     next_scores = get_next_score_release()
 
     text = (
-        "👑 <b>ADMIN CONTROL PANEL</b> 👑\n"
-        "────────────────────────\n"
+        "👑 <b>Admin Control Panel</b>\n\n"
         f"📊 <b>Active Subscribers:</b> <code>{stats.get('active', 0)}</code>\n"
         f"👥 <b>Total Users:</b> <code>{stats.get('total', 0)}</code>\n"
         f"📅 <b>Next Test:</b> {next_test['name'] if next_test else 'None'}\n"
         f"📢 <b>Next Score Date:</b> {next_scores['score_release_date'] if next_scores else 'None'}\n\n"
-        "<b>Available Admin Actions:</b>\n"
+        "<b>Actions:</b>\n"
         "• <b>Stats:</b> View real-time database counts\n"
         "• <b>Broadcast:</b> Send a message to all users\n"
-        "• <b>Announce Scores:</b> Instantly trigger score release alert\n"
-        "• <b>Check CB Feed:</b> Test live College Board API feed\n"
-        "• <b>Test Alerts:</b> Preview templates sent only to you"
+        "• <b>Announce Scores:</b> Trigger score release alert\n"
+        "• <b>Check CB Feed:</b> Test live College Board API\n"
+        "• <b>Test Alerts:</b> Preview templates"
     )
     return text, get_admin_panel_inline_keyboard()
 
@@ -253,23 +251,22 @@ async def get_schedule_content(chat_id: int) -> tuple[str, InlineKeyboardMarkup]
         return "No upcoming SAT dates found in the schedule.", get_subpage_inline_keyboard("schedule")
 
     lines = [
-        "📅 <b>OFFICIAL COLLEGE BOARD SAT SCHEDULE</b>\n"
+        "📅 <b>Official SAT Schedule</b>\n"
         f"<i>Timezone: {user_tz}</i>\n"
-        "────────────────────────\n"
     ]
     for item in upcoming:
         test_d = item["test_date"]
         score_d = item["score_release_date"]
-        test_badge = "✅ <i>Finished</i>" if test_d < today else f"🗓 <b>{test_d.strftime('%b %d, %Y')}</b>"
-        score_badge = "✅ <i>Released</i>" if score_d < today else f"📢 <b>{score_d.strftime('%b %d, %Y')}</b>"
+        test_badge = "<i>Finished</i>" if test_d < today else f"<b>{test_d.strftime('%b %d, %Y')}</b>"
+        score_badge = "<i>Released</i>" if score_d < today else f"<b>{score_d.strftime('%b %d, %Y')}</b>"
 
         lines.append(
             f"🎓 <b>{item['name']}</b>\n"
-            f"  ├ 📝 Test Date: {test_badge}\n"
-            f"  └ 🎯 Score Release: {score_badge}\n"
+            f"  • Test Date: {test_badge}\n"
+            f"  • Score Release: {score_badge}\n"
         )
 
-    lines.append("────────────────────────\nℹ️ <i>Dates follow the official College Board testing calendar.</i>")
+    lines.append("ℹ️ <i>Dates follow the official College Board calendar.</i>")
     return "\n".join(lines), get_subpage_inline_keyboard("schedule")
 
 
@@ -280,17 +277,16 @@ async def get_countdown_content(chat_id: int) -> tuple[str, InlineKeyboardMarkup
     next_score = get_next_score_release(user_tz)
 
     lines = [
-        "⏳ <b>LIVE SAT COUNTDOWNS</b>\n"
+        "⏳ <b>Live SAT Countdowns</b>\n"
         f"<i>Timezone: {user_tz}</i>\n"
-        "────────────────────────\n"
     ]
 
     if next_test:
         days_until_test = (next_test["test_date"] - today).days
         if days_until_test == 0:
-            test_str = "🔥 <b>TODAY IS EXAM DAY! Good luck!</b>"
+            test_str = "🔥 <b>TODAY IS EXAM DAY!</b>"
         elif days_until_test == 1:
-            test_str = "⚡ <b>1 DAY REMAINING (Tomorrow!)</b>"
+            test_str = "⚡ <b>Tomorrow!</b>"
         else:
             test_str = f"<b>{days_until_test} days</b> remaining"
         lines.append(
@@ -306,7 +302,7 @@ async def get_countdown_content(chat_id: int) -> tuple[str, InlineKeyboardMarkup
         if days_until_scores == 0:
             score_str = "🎉 <b>TODAY IS SCORE RELEASE DAY!</b>"
         elif days_until_scores == 1:
-            score_str = "⚡ <b>1 DAY REMAINING (Tomorrow!)</b>"
+            score_str = "⚡ <b>Tomorrow!</b>"
         else:
             score_str = f"<b>{days_until_scores} days</b> remaining"
         lines.append(
@@ -317,7 +313,6 @@ async def get_countdown_content(chat_id: int) -> tuple[str, InlineKeyboardMarkup
     else:
         lines.append("📢 <b>Next Score Release:</b> No upcoming score releases listed.\n")
 
-    lines.append("────────────────────────\n<i>Tap Refresh below for updated live stats!</i>")
     return "\n".join(lines), get_subpage_inline_keyboard("countdown")
 
 
@@ -327,29 +322,25 @@ async def get_tips_content() -> tuple[str, InlineKeyboardMarkup]:
 
 async def get_tutors_content() -> tuple[str, InlineKeyboardMarkup]:
     text = (
-        "📚 <b>SAT PREPARATION & RECOMMENDED TUTORS</b>\n"
-        "────────────────────────\n"
+        "📚 <b>SAT Prep & Recommended Tutors</b>\n\n"
         "🎯 <b>Official Free Practice:</b>\n"
-        "• <b>Bluebook™:</b> 6 Official full-length adaptive practice exams\n"
-        "• <b>Khan Academy:</b> Official Digital SAT interactive course & video explanations\n"
-        "• <b>College Board Question Bank:</b> Over 3,000+ real practice questions\n\n"
+        "• <b>Bluebook™:</b> 6 Official adaptive practice exams\n"
+        "• <b>Khan Academy:</b> Official Digital SAT course\n"
+        "• <b>Question Bank:</b> 3,000+ real practice questions\n\n"
         "👨‍🏫 <b>Featured SAT Tutors & Channels:</b>\n"
-        "• Are you an SAT tutor or education channel?\n"
-        "• Partner with us to feature your courses, mock exams, and channels here!\n\n"
-        "📩 <i>Contact the bot admin to get your tutoring service or channel featured!</i>"
+        "• Partner with us to feature your courses or channel here!\n\n"
+        "📩 <i>Contact admin to get featured.</i>"
     )
     return text, get_subpage_inline_keyboard("tutors")
 
 
 async def get_contact_content() -> tuple[str, InlineKeyboardMarkup]:
     text = (
-        "💬 <b>CONTACT & SUPPORT</b>\n"
-        "────────────────────────\n"
-        "Have questions, feedback, or want to partner with us?\n\n"
-        f"👤 <b>Admin Contact:</b> {ADMIN_CONTACT}\n"
+        "💬 <b>Contact & Support</b>\n\n"
+        f"👤 <b>Admin:</b> {ADMIN_CONTACT}\n\n"
         "📩 <b>Send Message in Bot:</b>\n"
-        "Type <code>/contact &lt;Your message here&gt;</code>\n"
-        "<i>(Our admin team will receive your message and reply directly in this chat!)</i>"
+        "Type <code>/contact &lt;Your message&gt;</code>\n"
+        "<i>(Our admin will reply directly in this chat)</i>"
     )
     return text, get_subpage_inline_keyboard("contact")
 
@@ -359,18 +350,17 @@ async def get_status_content(chat_id: int) -> tuple[str, InlineKeyboardMarkup]:
     is_sub = chat_id in active_subs
     user_tz = await get_user_timezone(chat_id)
 
-    status_icon = "🟢 ACTIVE" if is_sub else "🔴 PAUSED"
+    status_icon = "🟢 Active" if is_sub else "🔴 Paused"
     msg = (
-        "⚙️ <b>NOTIFICATION SETTINGS & STATUS</b>\n"
-        "────────────────────────\n"
-        f"📡 <b>Alert Status:</b> {status_icon}\n"
-        f"🌍 <b>Your Timezone:</b> <code>{user_tz}</code>\n\n"
-        "<b>Automated alerts included:</b>\n"
-        "• 📅 7-Day Countdown & Bluebook setup reminder\n"
-        "• 🎒 1-Day Before packing & rest checklist\n"
-        "• 🌟 Exam Morning motivational good-luck message\n"
-        "• 📢 Official Score Release Day announcement (Morning & Evening batches)\n\n"
-        "<i>Use the buttons below to toggle alerts or change timezone:</i>"
+        "⚙️ <b>Notification Settings</b>\n\n"
+        f"📡 <b>Status:</b> {status_icon}\n"
+        f"🌍 <b>Timezone:</b> <code>{user_tz}</code>\n\n"
+        "<b>Included alerts:</b>\n"
+        "• 7-Day Countdown & Bluebook setup\n"
+        "• 1-Day Before packing checklist\n"
+        "• Exam Morning good-luck message\n"
+        "• Official Score Release Day announcement\n\n"
+        "<i>Tap below to toggle alerts or change timezone:</i>"
     )
     return msg, get_subpage_inline_keyboard("status", is_subscribed=is_sub)
 
@@ -380,10 +370,9 @@ async def get_timezone_menu_content(chat_id: int) -> tuple[str, InlineKeyboardMa
     now_str = datetime.now(get_user_zoneinfo(current_tz)).strftime("%Y-%m-%d %H:%M:%S")
 
     text = (
-        "🌍 <b>TIMEZONE PREFERENCES</b>\n"
-        "────────────────────────\n"
-        f"📍 <b>Active Timezone:</b> <code>{current_tz}</code>\n"
-        f"🕒 <b>Current Local Time:</b> {now_str}\n\n"
+        "🌍 <b>Timezone Preferences</b>\n\n"
+        f"📍 <b>Active:</b> <code>{current_tz}</code>\n"
+        f"🕒 <b>Local Time:</b> {now_str}\n\n"
         "<b>Select your timezone below:</b>\n"
         "<i>(Or type <code>/timezone &lt;City/Region&gt;</code> e.g. <code>/timezone Asia/Tashkent</code>)</i>"
     )
@@ -554,12 +543,10 @@ async def handle_text_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE
         active_count = stats.get("active", 0)
 
         preview_msg = (
-            "📢 <b>BROADCAST PREVIEW & CONFIRMATION</b>\n"
-            "────────────────────────\n"
-            f"{text}\n"
-            "────────────────────────\n"
+            "📢 <b>Broadcast Preview & Confirmation</b>\n\n"
+            f"{text}\n\n"
             f"👥 <b>Target Recipients:</b> <code>{active_count} active users</code>\n\n"
-            "⚠️ <i>Do you want to send this broadcast to all subscribers now?</i>"
+            "<i>Send this broadcast to all subscribers now?</i>"
         )
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("🚀 Send Broadcast Now", callback_data="admin:confirm_broadcast")],
@@ -690,11 +677,10 @@ async def inline_callback_router(update: Update, context: ContextTypes.DEFAULT_T
             return
         stats = await get_subscriber_stats()
         text = (
-            "📊 <b>DETAILED LIVE STATS</b>\n"
-            "────────────────────────\n"
-            f"🟢 <b>Active Subscribers:</b> <code>{stats.get('active', 0)}</code>\n"
-            f"👥 <b>Total Registered:</b> <code>{stats.get('total', 0)}</code>\n"
-            f"⚡ <b>Engine Status:</b> <code>Healthy (WAL Mode)</code>\n"
+            "📊 <b>Live Subscriber Stats</b>\n\n"
+            f"🟢 <b>Active:</b> <code>{stats.get('active', 0)}</code>\n"
+            f"👥 <b>Total:</b> <code>{stats.get('total', 0)}</code>\n"
+            f"⚡ <b>Engine:</b> <code>Healthy (WAL Mode)</code>\n"
         )
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("🔄 Refresh Stats", callback_data="admin:stats")],
@@ -711,11 +697,10 @@ async def inline_callback_router(update: Update, context: ContextTypes.DEFAULT_T
         await query.answer(f"✅ Reactivated {count} users!", show_alert=True)
         stats = await get_subscriber_stats()
         text = (
-            "📊 <b>DETAILED LIVE STATS</b>\n"
-            "────────────────────────\n"
-            f"🟢 <b>Active Subscribers:</b> <code>{stats.get('active', 0)}</code>\n"
-            f"👥 <b>Total Registered:</b> <code>{stats.get('total', 0)}</code>\n"
-            f"⚡ <b>Engine Status:</b> <code>Healthy (WAL Mode)</code>\n"
+            "📊 <b>Live Subscriber Stats</b>\n\n"
+            f"🟢 <b>Active:</b> <code>{stats.get('active', 0)}</code>\n"
+            f"👥 <b>Total:</b> <code>{stats.get('total', 0)}</code>\n"
+            f"⚡ <b>Engine:</b> <code>Healthy (WAL Mode)</code>\n"
         )
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("🔄 Refresh Stats", callback_data="admin:stats")],
@@ -729,10 +714,9 @@ async def inline_callback_router(update: Update, context: ContextTypes.DEFAULT_T
             return
         _ADMIN_STATES[chat_id] = "awaiting_broadcast"
         text = (
-            "📢 <b>BROADCAST TO ALL SUBSCRIBERS</b>\n"
-            "────────────────────────\n"
-            "✍️ <b>Please send the message you want to broadcast below:</b>\n\n"
-            "<i>(You can type standard text, paste an announcement, or use bold/links. You do NOT need to type /broadcast)</i>"
+            "📢 <b>Broadcast to All Subscribers</b>\n\n"
+            "✍️ <b>Send the message you want to broadcast below:</b>\n\n"
+            "<i>(Standard text, announcements, bold or links supported)</i>"
         )
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("❌ Cancel Broadcast", callback_data="admin:cancel_broadcast")],
@@ -756,12 +740,11 @@ async def inline_callback_router(update: Update, context: ContextTypes.DEFAULT_T
             await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
             return
 
-        await query.edit_message_text("🚀 <b>Broadcasting message to all subscribers in real-time...</b>", parse_mode="HTML")
+        await query.edit_message_text("🚀 <b>Broadcasting message to subscribers in real-time...</b>", parse_mode="HTML")
         success, failed = await broadcast_message(context.bot, broadcast_text)
         result_msg = (
-            "✅ <b>BROADCAST COMPLETED</b>\n"
-            "────────────────────────\n"
-            f"• 📤 <b>Successfully Delivered:</b> <code>{success} users</code>\n"
+            "✅ <b>Broadcast Completed</b>\n\n"
+            f"• 📤 <b>Delivered:</b> <code>{success} users</code>\n"
             f"• ⚠️ <b>Failed / Inactive:</b> <code>{failed}</code>\n"
         )
         kb = InlineKeyboardMarkup([[InlineKeyboardButton("👑 Back to Admin Panel", callback_data="admin:panel")]])
@@ -795,8 +778,7 @@ async def inline_callback_router(update: Update, context: ContextTypes.DEFAULT_T
         alerts = await asyncio.to_thread(fetch_collegeboard_alerts)
         is_early, detail = await asyncio.to_thread(detect_early_score_release)
         text = (
-            "🔍 <b>COLLEGE BOARD LIVE FEED STATUS</b>\n"
-            "────────────────────────\n"
+            "🔍 <b>College Board Feed Status</b>\n\n"
             f"📡 <b>Alerts Feed Count:</b> {len(alerts)} alerts\n"
             f"⚡ <b>Early Release Detected:</b> {'YES 🚨' if is_early else 'NO (Normal Schedule)'}\n"
             f"ℹ️ <b>Detail:</b> {detail or 'Feed reachable, no active emergency banners.'}\n"
@@ -821,7 +803,7 @@ async def inline_callback_router(update: Update, context: ContextTypes.DEFAULT_T
         else:
             preview_text = TEMPLATES["score_release_morning"].format(test_name=next_test["name"], release_date=next_test["score_release_date"].strftime("%A, %B %d, %Y"))
         
-        text = f"🧪 <b>[ADMIN PREVIEW ONLY]</b>\n────────────────────────\n" + preview_text
+        text = f"🧪 <b>[Admin Preview]</b>\n\n" + preview_text
         kb = InlineKeyboardMarkup([[InlineKeyboardButton("👑 Back to Admin Panel", callback_data="admin:panel")]])
         await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
 
@@ -859,10 +841,9 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         _ADMIN_STATES[chat_id] = "awaiting_broadcast"
         await update.message.reply_text(
-            "📢 <b>BROADCAST TO ALL SUBSCRIBERS</b>\n"
-            "────────────────────────\n"
+            "📢 <b>Broadcast to All Subscribers</b>\n\n"
             "✍️ <b>Please send the message you want to broadcast below:</b>\n\n"
-            "<i>(You can type standard text, paste an announcement, or use bold/links)</i>",
+            "<i>(Standard text, announcements, bold or links supported)</i>",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="admin:cancel_broadcast")]]),
             parse_mode="HTML",
         )
@@ -920,8 +901,7 @@ async def contact_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Forward to Admins
     if ADMIN_IDS:
         admin_alert = (
-            "📩 <b>NEW CUSTOMER SUPPORT MESSAGE</b>\n"
-            "────────────────────────\n"
+            "📩 <b>New Support Message</b>\n\n"
             f"👤 <b>From:</b> {user.first_name} (@{user.username or 'N/A'})\n"
             f"🆔 <b>User ID:</b> <code>{chat_id}</code>\n\n"
             f"💬 <b>Message:</b>\n{user_message}\n\n"
@@ -935,7 +915,7 @@ async def contact_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         "✅ <b>Message Sent to Support!</b>\n\n"
-        "Our admin has received your message and will reply to you directly in this bot.",
+        "Our admin has received your message and will reply directly in this chat.",
         parse_mode="HTML",
     )
 
@@ -959,15 +939,14 @@ async def reply_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_text = " ".join(context.args[1:])
 
     msg_to_user = (
-        "💬 <b>SUPPORT TEAM RESPONSE</b>\n"
-        "────────────────────────\n"
+        "💬 <b>Support Team Response</b>\n\n"
         f"{reply_text}\n\n"
         "<i>To send another message, type /contact &lt;message&gt;</i>"
     )
 
     try:
         await context.bot.send_message(chat_id=target_id, text=msg_to_user, parse_mode="HTML")
-        await update.message.reply_text(f"✅ Response successfully delivered to user <code>{target_id}</code>.", parse_mode="HTML")
+        await update.message.reply_text(f"✅ Response delivered to user <code>{target_id}</code>.", parse_mode="HTML")
     except Exception as e:
         await update.message.reply_text(f"❌ Failed to deliver message to <code>{target_id}</code>: {e}", parse_mode="HTML")
 
@@ -989,8 +968,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     days_to_score = (next_score["score_release_date"] - today).days if next_score else 0
 
     countdown_text = (
-        "⏳ <b>SAT LIVE COUNTDOWNS</b>\n"
-        "────────────────────────\n"
+        "⏳ <b>Live SAT Countdowns</b>\n\n"
         f"📝 <b>Next Exam:</b> {next_test['name'] if next_test else 'None'}\n"
         f"   ↳ <b>{days_to_test} days</b> remaining ({next_test['test_date'].strftime('%b %d, %Y') if next_test else 'N/A'})\n\n"
         f"📢 <b>Next Score Release:</b> {next_score['name'] if next_score else 'None'}\n"
@@ -1004,7 +982,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
     # 2. Schedule Article
     upcoming = get_upcoming_tests(limit=5)
-    sched_lines = ["📅 <b>OFFICIAL SAT TESTING SCHEDULE</b>\n────────────────────────\n"]
+    sched_lines = ["📅 <b>Official SAT Schedule</b>\n\n"]
     for item in upcoming:
         sched_lines.append(f"🎓 <b>{item['name']}</b>\n  • Test Date: <b>{item['test_date'].strftime('%b %d, %Y')}</b>\n  • Score Release: <b>{item['score_release_date'].strftime('%b %d, %Y')}</b>\n")
     sched_text = "\n".join(sched_lines)
@@ -1053,18 +1031,27 @@ async def chat_member_update_handler(update: Update, context: ContextTypes.DEFAU
     )
 
     welcome_msg = (
-        "👋 <b>Hello Everyone! SAT Notify Bot is now active in this group!</b>\n"
-        "────────────────────────\n"
-        "This group will now automatically receive:\n"
-        "✨ <b>Test-Day Reminders & Checklists</b> (7 days & 1 day before exam)\n"
-        "🌟 <b>Exam Morning Motivation</b>\n"
-        "📢 <b>Instant Score Release Drops</b> on release days\n\n"
-        "<b>Group Commands:</b>\n"
-        "• /countdown - Live countdown to next exam & score drop\n"
-        "• /schedule - Official College Board SAT calendar\n"
-        "• /tips - Digital SAT checklist & pacing strategies\n"
-        "• /timezone - Set group timezone"
+        "👋 <b>SAT Notify Bot is active in this group!</b>\n\n"
+        "This group will automatically receive:\n"
+        "✨ Test-Day Reminders & Checklists\n"
+        "🌟 Exam Morning Motivation\n"
+        "📢 Instant Score Release Drops\n\n"
+        "<b>Commands:</b> /countdown, /schedule, /tips, /timezone"
     )
+    group_kb = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("⏳ Live Countdown", callback_data="nav:countdown"),
+            InlineKeyboardButton("📅 SAT Schedule", callback_data="nav:schedule"),
+        ],
+        [
+            InlineKeyboardButton("🌐 Score Portal", url="https://studentscores.collegeboard.org/"),
+        ],
+    ])
+
+    try:
+        await context.bot.send_message(chat_id=chat.id, text=welcome_msg, reply_markup=group_kb, parse_mode="HTML")
+    except Exception as e:
+        logger.error("Failed to send welcome message to group %s: %s", chat.id, e)
     group_kb = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("⏳ Live Countdown", callback_data="nav:countdown"),
