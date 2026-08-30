@@ -35,6 +35,7 @@ from config import (
     get_next_test,
     get_next_score_release,
     get_upcoming_tests,
+    custom_emoji,
 )
 from database import (
     init_db,
@@ -212,10 +213,10 @@ async def get_dashboard_content(chat_id: int) -> tuple[str, InlineKeyboardMarkup
     next_score_str = f"{next_score['name']} ({next_score['score_release_date'].strftime('%b %d, %Y')})" if next_score else "None listed"
 
     text = (
-        "✨ <b>SAT Notify Dashboard</b>\n\n"
-        f"🌍 <b>Timezone:</b> <code>{user_tz}</code>\n"
-        f"📅 <b>Next Exam:</b> {next_test_str}\n"
-        f"📢 <b>Next Scores:</b> {next_score_str}\n\n"
+        f"{custom_emoji('sparkles', '✨')} <b>SAT Notify Dashboard</b>\n\n"
+        f"{custom_emoji('globe', '🌍')} <b>Timezone:</b> <code>{user_tz}</code>\n"
+        f"{custom_emoji('calendar', '📅')} <b>Next Exam:</b> {next_test_str}\n"
+        f"{custom_emoji('megaphone', '📢')} <b>Next Scores:</b> {next_score_str}\n\n"
         "<i>Pick an action below:</i>"
     )
     return text, get_main_menu_inline_keyboard(is_user_admin=user_is_admin)
@@ -227,11 +228,11 @@ async def get_admin_panel_content() -> tuple[str, InlineKeyboardMarkup]:
     next_scores = get_next_score_release()
 
     text = (
-        "👑 <b>Admin Control Panel</b>\n\n"
-        f"📊 <b>Active Subscribers:</b> <code>{stats.get('active', 0)}</code>\n"
-        f"👥 <b>Total Users:</b> <code>{stats.get('total', 0)}</code>\n"
-        f"📅 <b>Next Test:</b> {next_test['name'] if next_test else 'None'}\n"
-        f"📢 <b>Next Score Date:</b> {next_scores['score_release_date'] if next_scores else 'None'}\n\n"
+        f"{custom_emoji('crown', '👑')} <b>Admin Control Panel</b>\n\n"
+        f"{custom_emoji('stats', '📊')} <b>Active Subscribers:</b> <code>{stats.get('active', 0)}</code>\n"
+        f"{custom_emoji('users', '👥')} <b>Total Users:</b> <code>{stats.get('total', 0)}</code>\n"
+        f"{custom_emoji('calendar', '📅')} <b>Next Test:</b> {next_test['name'] if next_test else 'None'}\n"
+        f"{custom_emoji('megaphone', '📢')} <b>Next Score Date:</b> {next_scores['score_release_date'] if next_scores else 'None'}\n\n"
         "<b>Actions:</b>\n"
         "• <b>Stats:</b> View real-time database counts\n"
         "• <b>Broadcast:</b> Send a message to all users\n"
@@ -251,7 +252,7 @@ async def get_schedule_content(chat_id: int) -> tuple[str, InlineKeyboardMarkup]
         return "No upcoming SAT dates found in the schedule.", get_subpage_inline_keyboard("schedule")
 
     lines = [
-        "📅 <b>Official SAT Schedule</b>\n"
+        f"{custom_emoji('calendar', '📅')} <b>Official SAT Schedule</b>\n"
         f"<i>Timezone: {user_tz}</i>\n"
     ]
     for item in upcoming:
@@ -261,12 +262,12 @@ async def get_schedule_content(chat_id: int) -> tuple[str, InlineKeyboardMarkup]
         score_badge = "<i>Released</i>" if score_d < today else f"<b>{score_d.strftime('%b %d, %Y')}</b>"
 
         lines.append(
-            f"🎓 <b>{item['name']}</b>\n"
+            f"{custom_emoji('grad', '🎓')} <b>{item['name']}</b>\n"
             f"  • Test Date: {test_badge}\n"
             f"  • Score Release: {score_badge}\n"
         )
 
-    lines.append("ℹ️ <i>Dates follow the official College Board calendar.</i>")
+    lines.append(f"{custom_emoji('info', 'ℹ️')} <i>Dates follow the official College Board calendar.</i>")
     return "\n".join(lines), get_subpage_inline_keyboard("schedule")
 
 
@@ -277,7 +278,7 @@ async def get_countdown_content(chat_id: int) -> tuple[str, InlineKeyboardMarkup
     next_score = get_next_score_release(user_tz)
 
     lines = [
-        "⏳ <b>Live SAT Countdowns</b>\n"
+        f"{custom_emoji('countdown', '⏳')} <b>Live SAT Countdowns</b>\n"
         f"<i>Timezone: {user_tz}</i>\n"
     ]
 
@@ -290,12 +291,12 @@ async def get_countdown_content(chat_id: int) -> tuple[str, InlineKeyboardMarkup
         else:
             test_str = f"<b>{days_until_test} days</b> remaining"
         lines.append(
-            f"📝 <b>Next SAT Exam:</b>\n"
+            f"{custom_emoji('checklist', '📝')} <b>Next SAT Exam:</b>\n"
             f"   {next_test['name']} ({next_test['test_date'].strftime('%b %d, %Y')})\n"
             f"   ↳ {test_str}\n"
         )
     else:
-        lines.append("📝 <b>Next SAT Exam:</b> No upcoming exams listed.\n")
+        lines.append(f"{custom_emoji('checklist', '📝')} <b>Next SAT Exam:</b> No upcoming exams listed.\n")
 
     if next_score:
         days_until_scores = (next_score["score_release_date"] - today).days
@@ -306,12 +307,12 @@ async def get_countdown_content(chat_id: int) -> tuple[str, InlineKeyboardMarkup
         else:
             score_str = f"<b>{days_until_scores} days</b> remaining"
         lines.append(
-            f"📢 <b>Next Score Release:</b>\n"
+            f"{custom_emoji('megaphone', '📢')} <b>Next Score Release:</b>\n"
             f"   {next_score['name']} ({next_score['score_release_date'].strftime('%b %d, %Y')})\n"
             f"   ↳ {score_str}\n"
         )
     else:
-        lines.append("📢 <b>Next Score Release:</b> No upcoming score releases listed.\n")
+        lines.append(f"{custom_emoji('megaphone', '📢')} <b>Next Score Release:</b> No upcoming score releases listed.\n")
 
     return "\n".join(lines), get_subpage_inline_keyboard("countdown")
 
@@ -322,12 +323,12 @@ async def get_tips_content() -> tuple[str, InlineKeyboardMarkup]:
 
 async def get_tutors_content() -> tuple[str, InlineKeyboardMarkup]:
     text = (
-        "📚 <b>SAT Prep & Recommended Tutors</b>\n\n"
-        "🎯 <b>Official Free Practice:</b>\n"
+        f"{custom_emoji('books', '📚')} <b>SAT Prep & Recommended Tutors</b>\n\n"
+        f"{custom_emoji('target', '🎯')} <b>Official Free Practice:</b>\n"
         "• <b>Bluebook™:</b> 6 Official adaptive practice exams\n"
         "• <b>Khan Academy:</b> Official Digital SAT course\n"
         "• <b>Question Bank:</b> 3,000+ real practice questions\n\n"
-        "👨‍🏫 <b>Featured SAT Tutors & Channels:</b>\n"
+        f"{custom_emoji('tutor', '👨‍🏫')} <b>Featured SAT Tutors & Channels:</b>\n"
         "• Partner with us to feature your courses or channel here!\n\n"
         "📩 <i>Contact admin to get featured.</i>"
     )
@@ -336,7 +337,7 @@ async def get_tutors_content() -> tuple[str, InlineKeyboardMarkup]:
 
 async def get_contact_content() -> tuple[str, InlineKeyboardMarkup]:
     text = (
-        "💬 <b>Contact & Support</b>\n\n"
+        f"{custom_emoji('chat', '💬')} <b>Contact & Support</b>\n\n"
         f"👤 <b>Admin:</b> {ADMIN_CONTACT}\n\n"
         "📩 <b>Send Message in Bot:</b>\n"
         "Type <code>/contact &lt;Your message&gt;</code>\n"
@@ -350,11 +351,11 @@ async def get_status_content(chat_id: int) -> tuple[str, InlineKeyboardMarkup]:
     is_sub = chat_id in active_subs
     user_tz = await get_user_timezone(chat_id)
 
-    status_icon = "🟢 Active" if is_sub else "🔴 Paused"
+    status_icon = f"{custom_emoji('active', '🟢')} Active" if is_sub else f"{custom_emoji('paused', '🔴')} Paused"
     msg = (
-        "⚙️ <b>Notification Settings</b>\n\n"
+        f"{custom_emoji('settings', '⚙️')} <b>Notification Settings</b>\n\n"
         f"📡 <b>Status:</b> {status_icon}\n"
-        f"🌍 <b>Timezone:</b> <code>{user_tz}</code>\n\n"
+        f"{custom_emoji('globe', '🌍')} <b>Timezone:</b> <code>{user_tz}</code>\n\n"
         "<b>Included alerts:</b>\n"
         "• 7-Day Countdown & Bluebook setup\n"
         "• 1-Day Before packing checklist\n"
@@ -370,7 +371,7 @@ async def get_timezone_menu_content(chat_id: int) -> tuple[str, InlineKeyboardMa
     now_str = datetime.now(get_user_zoneinfo(current_tz)).strftime("%Y-%m-%d %H:%M:%S")
 
     text = (
-        "🌍 <b>Timezone Preferences</b>\n\n"
+        f"{custom_emoji('globe', '🌍')} <b>Timezone Preferences</b>\n\n"
         f"📍 <b>Active:</b> <code>{current_tz}</code>\n"
         f"🕒 <b>Local Time:</b> {now_str}\n\n"
         "<b>Select your timezone below:</b>\n"
