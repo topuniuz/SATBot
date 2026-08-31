@@ -75,31 +75,6 @@ def get_persistent_reply_keyboard(is_user_admin: bool = False) -> ReplyKeyboardM
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
 
-def get_main_menu_inline_keyboard(is_user_admin: bool = False) -> InlineKeyboardMarkup:
-    """Returns clean inline buttons for the main dashboard."""
-    buttons = [
-        [
-            InlineKeyboardButton("📅 Official Schedule", callback_data="nav:schedule"),
-            InlineKeyboardButton("⏳ Live Countdown", callback_data="nav:countdown"),
-        ],
-        [
-            InlineKeyboardButton("📝 Test-Day Checklist", callback_data="nav:tips"),
-            InlineKeyboardButton("🌍 Set Timezone", callback_data="nav:timezone"),
-        ],
-        [
-            InlineKeyboardButton("📚 SAT Tutors & Prep", callback_data="nav:tutors"),
-            InlineKeyboardButton("💬 Contact Support", callback_data="nav:contact"),
-        ],
-        [
-            InlineKeyboardButton("⚙️ Status & Alerts", callback_data="nav:status"),
-            InlineKeyboardButton("🌐 Score Portal", url="https://studentscores.collegeboard.org/"),
-        ],
-    ]
-    if is_user_admin:
-        buttons.append([InlineKeyboardButton("👑 Admin Control Panel", callback_data="admin:panel")])
-    return InlineKeyboardMarkup(buttons)
-
-
 def get_admin_panel_inline_keyboard() -> InlineKeyboardMarkup:
     """Returns interactive inline buttons for Admin Control Panel."""
     buttons = [
@@ -119,57 +94,7 @@ def get_admin_panel_inline_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("🧪 Test Exam Morning", callback_data="admin:test_morning"),
             InlineKeyboardButton("🧪 Test Score Release", callback_data="admin:test_scores"),
         ],
-        [
-            InlineKeyboardButton("🏠 Back to Main Dashboard", callback_data="nav:menu"),
-        ],
     ]
-    return InlineKeyboardMarkup(buttons)
-
-
-def get_subpage_inline_keyboard(current_page: str, is_subscribed: bool = True) -> InlineKeyboardMarkup:
-    """Returns contextual action buttons and a back button for sub-pages."""
-    buttons = []
-
-    if current_page == "schedule":
-        buttons.append([
-            InlineKeyboardButton("⏳ View Countdown", callback_data="nav:countdown"),
-            InlineKeyboardButton("🌍 Change Timezone", callback_data="nav:timezone"),
-        ])
-    elif current_page == "countdown":
-        buttons.append([
-            InlineKeyboardButton("🔄 Refresh Countdown", callback_data="nav:countdown"),
-            InlineKeyboardButton("📅 Full Schedule", callback_data="nav:schedule"),
-        ])
-    elif current_page == "tips":
-        buttons.append([
-            InlineKeyboardButton("⏳ View Countdown", callback_data="nav:countdown"),
-            InlineKeyboardButton("📚 SAT Prep & Tutors", callback_data="nav:tutors"),
-        ])
-    elif current_page == "tutors":
-        buttons.append([
-            InlineKeyboardButton("💬 Contact Admin to Feature Tutor", callback_data="nav:contact"),
-        ])
-        buttons.append([
-            InlineKeyboardButton("📝 Test Tips", callback_data="nav:tips"),
-            InlineKeyboardButton("⏳ View Countdown", callback_data="nav:countdown"),
-        ])
-    elif current_page == "contact":
-        contact_url = f"https://t.me/{ADMIN_CONTACT.lstrip('@')}" if ADMIN_CONTACT.startswith("@") else ADMIN_CONTACT
-        buttons.append([
-            InlineKeyboardButton("💬 Open Chat with Admin", url=contact_url),
-        ])
-    elif current_page == "status":
-        sub_btn = (
-            InlineKeyboardButton("🔕 Pause Alerts", callback_data="action:toggle_sub")
-            if is_subscribed
-            else InlineKeyboardButton("🔔 Resume Alerts", callback_data="action:toggle_sub")
-        )
-        buttons.append([sub_btn, InlineKeyboardButton("🌍 Change Timezone", callback_data="nav:timezone")])
-
-    buttons.append([
-        InlineKeyboardButton("🏠 Main Dashboard", callback_data="nav:menu"),
-        InlineKeyboardButton("🔗 Score Portal", url="https://studentscores.collegeboard.org/"),
-    ])
     return InlineKeyboardMarkup(buttons)
 
 
@@ -178,7 +103,7 @@ def get_timezone_inline_keyboard(selected_tz: str) -> InlineKeyboardMarkup:
     buttons = []
     row = []
 
-    # Build 2-column layout for compact, premium look
+    # Build 2-column layout for compact, clean look
     for label, tz_code in POPULAR_TIMEZONES:
         # Simplify label for buttons
         short_label = label.split("(")[0].strip()
@@ -195,7 +120,6 @@ def get_timezone_inline_keyboard(selected_tz: str) -> InlineKeyboardMarkup:
     if row:
         buttons.append(row)
 
-    buttons.append([InlineKeyboardButton("🏠 Back to Main Dashboard", callback_data="nav:menu")])
     return InlineKeyboardMarkup(buttons)
 
 
@@ -203,23 +127,21 @@ def get_timezone_inline_keyboard(selected_tz: str) -> InlineKeyboardMarkup:
 # CONTENT GENERATORS
 # ---------------------------------------------------------
 
-async def get_dashboard_content(chat_id: int) -> tuple[str, InlineKeyboardMarkup]:
+async def get_dashboard_content(chat_id: int) -> str:
     user_tz = await get_user_timezone(chat_id)
     next_test = get_next_test(user_tz)
     next_score = get_next_score_release(user_tz)
-    user_is_admin = is_admin(chat_id)
 
     next_test_str = f"{next_test['name']} ({next_test['test_date'].strftime('%b %d, %Y')})" if next_test else "None listed"
     next_score_str = f"{next_score['name']} ({next_score['score_release_date'].strftime('%b %d, %Y')})" if next_score else "None listed"
 
-    text = (
+    return (
         f"{custom_emoji('sparkles', '✨')} <b>SAT Notify Dashboard</b>\n\n"
         f"{custom_emoji('globe', '🌍')} <b>Timezone:</b> <code>{user_tz}</code>\n"
         f"{custom_emoji('calendar', '📅')} <b>Next Exam:</b> {next_test_str}\n"
         f"{custom_emoji('megaphone', '📢')} <b>Next Scores:</b> {next_score_str}\n\n"
-        "<i>Pick an action below:</i>"
+        "<i>Use the menu buttons below to check schedules, live countdowns, tips, and settings.</i>"
     )
-    return text, get_main_menu_inline_keyboard(is_user_admin=user_is_admin)
 
 
 async def get_admin_panel_content() -> tuple[str, InlineKeyboardMarkup]:
@@ -243,13 +165,13 @@ async def get_admin_panel_content() -> tuple[str, InlineKeyboardMarkup]:
     return text, get_admin_panel_inline_keyboard()
 
 
-async def get_schedule_content(chat_id: int) -> tuple[str, InlineKeyboardMarkup]:
+async def get_schedule_content(chat_id: int) -> str:
     user_tz = await get_user_timezone(chat_id)
     upcoming = get_upcoming_tests(limit=6, tz_name=user_tz)
     today = get_current_date(user_tz)
 
     if not upcoming:
-        return "No upcoming SAT dates found in the schedule.", get_subpage_inline_keyboard("schedule")
+        return "No upcoming SAT dates found in the schedule."
 
     lines = [
         f"{custom_emoji('calendar', '📅')} <b>Official SAT Schedule</b>\n"
@@ -268,10 +190,10 @@ async def get_schedule_content(chat_id: int) -> tuple[str, InlineKeyboardMarkup]
         )
 
     lines.append(f"{custom_emoji('info', 'ℹ️')} <i>Dates follow the official College Board calendar.</i>")
-    return "\n".join(lines), get_subpage_inline_keyboard("schedule")
+    return "\n".join(lines)
 
 
-async def get_countdown_content(chat_id: int) -> tuple[str, InlineKeyboardMarkup]:
+async def get_countdown_content(chat_id: int) -> str:
     user_tz = await get_user_timezone(chat_id)
     today = get_current_date(user_tz)
     next_test = get_next_test(user_tz)
@@ -314,45 +236,45 @@ async def get_countdown_content(chat_id: int) -> tuple[str, InlineKeyboardMarkup
     else:
         lines.append(f"{custom_emoji('megaphone', '📢')} <b>Next Score Release:</b> No upcoming score releases listed.\n")
 
-    return "\n".join(lines), get_subpage_inline_keyboard("countdown")
+    return "\n".join(lines)
 
 
-async def get_tips_content() -> tuple[str, InlineKeyboardMarkup]:
-    return TEMPLATES["tips"], get_subpage_inline_keyboard("tips")
+async def get_tips_content() -> str:
+    return TEMPLATES["tips"]
 
 
-async def get_tutors_content() -> tuple[str, InlineKeyboardMarkup]:
-    text = (
-        f"{custom_emoji('books', '📚')} <b>SAT Prep & Recommended Tutors</b>\n\n"
+async def get_tutors_content() -> str:
+    contact_handle = ADMIN_CONTACT.lstrip('@')
+    return (
+        f"{custom_emoji('books', '📚')} <b>SAT Prep & Recommended Resources</b>\n\n"
         f"{custom_emoji('target', '🎯')} <b>Official Free Practice:</b>\n"
-        "• <b>Bluebook™:</b> 6 Official adaptive practice exams\n"
-        "• <b>Khan Academy:</b> Official Digital SAT course\n"
-        "• <b>Question Bank:</b> 3,000+ real practice questions\n\n"
+        "• <b><a href=\"https://bluebook.collegeboard.org/\">Bluebook™ App</a>:</b> 6 Official adaptive practice exams\n"
+        "• <b><a href=\"https://www.khanacademy.org/digital-sat\">Khan Academy</a>:</b> Official Digital SAT prep course\n"
+        "• <b><a href=\"https://satsuitequestionbank.collegeboard.org/\">Question Bank</a>:</b> 3,000+ real practice questions\n\n"
         f"{custom_emoji('tutor', '👨‍🏫')} <b>Featured SAT Tutors & Channels:</b>\n"
         "• Partner with us to feature your courses or channel here!\n\n"
-        "📩 <i>Contact admin to get featured.</i>"
+        f"📩 <i>Contact admin (<a href=\"https://t.me/{contact_handle}\">{ADMIN_CONTACT}</a>) to get featured.</i>"
     )
-    return text, get_subpage_inline_keyboard("tutors")
 
 
-async def get_contact_content() -> tuple[str, InlineKeyboardMarkup]:
-    text = (
+async def get_contact_content() -> str:
+    contact_handle = ADMIN_CONTACT.lstrip('@')
+    return (
         f"{custom_emoji('chat', '💬')} <b>Contact & Support</b>\n\n"
-        f"👤 <b>Admin:</b> {ADMIN_CONTACT}\n\n"
+        f"👤 <b>Admin:</b> <a href=\"https://t.me/{contact_handle}\">{ADMIN_CONTACT}</a>\n\n"
         "📩 <b>Send Message in Bot:</b>\n"
         "Type <code>/contact &lt;Your message&gt;</code>\n"
         "<i>(Our admin will reply directly in this chat)</i>"
     )
-    return text, get_subpage_inline_keyboard("contact")
 
 
-async def get_status_content(chat_id: int) -> tuple[str, InlineKeyboardMarkup]:
+async def get_status_content(chat_id: int) -> str:
     active_subs = await get_active_subscribers()
     is_sub = chat_id in active_subs
     user_tz = await get_user_timezone(chat_id)
 
     status_icon = f"{custom_emoji('active', '🟢')} Active" if is_sub else f"{custom_emoji('paused', '🔴')} Paused"
-    msg = (
+    return (
         f"{custom_emoji('settings', '⚙️')} <b>Notification Settings</b>\n\n"
         f"📡 <b>Status:</b> {status_icon}\n"
         f"{custom_emoji('globe', '🌍')} <b>Timezone:</b> <code>{user_tz}</code>\n\n"
@@ -361,9 +283,8 @@ async def get_status_content(chat_id: int) -> tuple[str, InlineKeyboardMarkup]:
         "• 1-Day Before packing checklist\n"
         "• Exam Morning good-luck message\n"
         "• Official Score Release Day announcement\n\n"
-        "<i>Tap below to toggle alerts or change timezone:</i>"
+        "<i>To change timezone, use the 🌍 Timezone button or /timezone &lt;City/Region&gt;.</i>"
     )
-    return msg, get_subpage_inline_keyboard("status", is_subscribed=is_sub)
 
 
 async def get_timezone_menu_content(chat_id: int) -> tuple[str, InlineKeyboardMarkup]:
@@ -374,8 +295,8 @@ async def get_timezone_menu_content(chat_id: int) -> tuple[str, InlineKeyboardMa
         f"{custom_emoji('globe', '🌍')} <b>Timezone Preferences</b>\n\n"
         f"📍 <b>Active:</b> <code>{current_tz}</code>\n"
         f"🕒 <b>Local Time:</b> {now_str}\n\n"
-        "<b>Select your timezone below:</b>\n"
-        "<i>(Or type <code>/timezone &lt;City/Region&gt;</code> e.g. <code>/timezone Asia/Tashkent</code>)</i>"
+        "<b>Select your timezone below or type:</b>\n"
+        "<code>/timezone &lt;City/Region&gt;</code> (e.g. <code>/timezone Asia/Tashkent</code>)"
     )
     return text, get_timezone_inline_keyboard(current_tz)
 
@@ -397,7 +318,6 @@ async def broadcast_message(bot, text: str, parse_mode: str = "HTML") -> tuple[i
                 text=text,
                 parse_mode=parse_mode,
                 disable_web_page_preview=True,
-                reply_markup=get_main_menu_inline_keyboard(is_user_admin=is_admin(chat_id)),
             )
             success += 1
             await asyncio.sleep(0.04)  # 25 msgs/sec for high speed
@@ -411,7 +331,6 @@ async def broadcast_message(bot, text: str, parse_mode: str = "HTML") -> tuple[i
                         text=text,
                         parse_mode=None,
                         disable_web_page_preview=True,
-                        reply_markup=get_main_menu_inline_keyboard(is_user_admin=is_admin(chat_id)),
                     )
                     success += 1
                     await asyncio.sleep(0.04)
@@ -442,7 +361,7 @@ async def broadcast_message(bot, text: str, parse_mode: str = "HTML") -> tuple[i
 # ---------------------------------------------------------
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handler for /start command - responds instantly with dashboard."""
+    """Handler for /start command - responds instantly with dashboard and bottom keyboard."""
     user = update.effective_user
     chat_id = update.effective_chat.id
     user_is_admin = is_admin(chat_id)
@@ -453,16 +372,9 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         first_name=user.first_name,
     )
 
-    text, inline_kb = await get_dashboard_content(chat_id)
-    # Send single snappy response with both keyboards
+    text = await get_dashboard_content(chat_id)
     await update.message.reply_text(
         text=text,
-        reply_markup=inline_kb,
-        parse_mode="HTML",
-    )
-    # Ensure bottom reply keyboard is presented
-    await update.message.reply_text(
-        text="👋 Choose an option from the menu below or tap any button above:",
         reply_markup=get_persistent_reply_keyboard(is_user_admin=user_is_admin),
         parse_mode="HTML",
     )
@@ -480,23 +392,23 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def schedule_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text, kb = await get_schedule_content(update.effective_chat.id)
-    await update.message.reply_text(text, reply_markup=kb, parse_mode="HTML")
+    text = await get_schedule_content(update.effective_chat.id)
+    await update.message.reply_text(text, parse_mode="HTML")
 
 
 async def countdown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text, kb = await get_countdown_content(update.effective_chat.id)
-    await update.message.reply_text(text, reply_markup=kb, parse_mode="HTML")
+    text = await get_countdown_content(update.effective_chat.id)
+    await update.message.reply_text(text, parse_mode="HTML")
 
 
 async def tips_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text, kb = await get_tips_content()
-    await update.message.reply_text(text, reply_markup=kb, parse_mode="HTML")
+    text = await get_tips_content()
+    await update.message.reply_text(text, parse_mode="HTML")
 
 
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text, kb = await get_status_content(update.effective_chat.id)
-    await update.message.reply_text(text, reply_markup=kb, parse_mode="HTML")
+    text = await get_status_content(update.effective_chat.id)
+    await update.message.reply_text(text, parse_mode="HTML")
 
 
 async def timezone_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -507,10 +419,8 @@ async def timezone_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             _ = get_user_zoneinfo(custom_tz)
             await set_user_timezone(chat_id, custom_tz)
             now_str = datetime.now(get_user_zoneinfo(custom_tz)).strftime("%Y-%m-%d %H:%M:%S")
-            text, kb = await get_dashboard_content(chat_id)
             await update.message.reply_text(
                 f"✅ <b>Timezone Updated to:</b> <code>{custom_tz}</code>\n🕒 <b>Local Time:</b> {now_str}",
-                reply_markup=kb,
                 parse_mode="HTML",
             )
             return
@@ -557,26 +467,26 @@ async def handle_text_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     if text == "📅 SAT Schedule":
-        msg, kb = await get_schedule_content(chat_id)
-        await update.message.reply_text(msg, reply_markup=kb, parse_mode="HTML")
+        msg = await get_schedule_content(chat_id)
+        await update.message.reply_text(msg, parse_mode="HTML")
     elif text == "⏳ Live Countdown":
-        msg, kb = await get_countdown_content(chat_id)
-        await update.message.reply_text(msg, reply_markup=kb, parse_mode="HTML")
+        msg = await get_countdown_content(chat_id)
+        await update.message.reply_text(msg, parse_mode="HTML")
     elif text == "📝 Test-Day Tips":
-        msg, kb = await get_tips_content()
-        await update.message.reply_text(msg, reply_markup=kb, parse_mode="HTML")
+        msg = await get_tips_content()
+        await update.message.reply_text(msg, parse_mode="HTML")
     elif text == "📚 SAT Tutors & Prep":
-        msg, kb = await get_tutors_content()
-        await update.message.reply_text(msg, reply_markup=kb, parse_mode="HTML")
+        msg = await get_tutors_content()
+        await update.message.reply_text(msg, parse_mode="HTML", disable_web_page_preview=True)
     elif text == "💬 Contact Support":
-        msg, kb = await get_contact_content()
-        await update.message.reply_text(msg, reply_markup=kb, parse_mode="HTML")
+        msg = await get_contact_content()
+        await update.message.reply_text(msg, parse_mode="HTML", disable_web_page_preview=True)
     elif text == "🌍 Timezone":
         msg, kb = await get_timezone_menu_content(chat_id)
         await update.message.reply_text(msg, reply_markup=kb, parse_mode="HTML")
     elif text in ["⚙️ Notification Status", "⚙️ Status & Alerts"]:
-        msg, kb = await get_status_content(chat_id)
-        await update.message.reply_text(msg, reply_markup=kb, parse_mode="HTML")
+        msg = await get_status_content(chat_id)
+        await update.message.reply_text(msg, parse_mode="HTML")
     elif text in ["👑 Admin Panel", "👑 Admin Control Panel"]:
         if is_admin(chat_id):
             msg, kb = await get_admin_panel_content()
@@ -584,20 +494,16 @@ async def handle_text_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE
         else:
             await update.message.reply_text("⛔ You are not authorized to view the admin panel.")
     elif text == "🔗 Score Portal":
-        kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🌐 Open College Board Score Portal", url="https://studentscores.collegeboard.org/")],
-            [InlineKeyboardButton("🏠 Back to Dashboard", callback_data="nav:menu")],
-        ])
         await update.message.reply_text(
             "🔗 <b>College Board Student Score Portal</b>\n\n"
-            "Tap below to log into your official College Board account and view your SAT scores:",
-            reply_markup=kb,
+            "Access your official SAT scores here: https://studentscores.collegeboard.org/",
             parse_mode="HTML",
+            disable_web_page_preview=True,
         )
     else:
         # Default: Show Main Dashboard
-        msg, kb = await get_dashboard_content(chat_id)
-        await update.message.reply_text(msg, reply_markup=kb, parse_mode="HTML")
+        msg = await get_dashboard_content(chat_id)
+        await update.message.reply_text(msg, parse_mode="HTML")
 
 
 # ---------------------------------------------------------
@@ -617,36 +523,36 @@ async def inline_callback_router(update: Update, context: ContextTypes.DEFAULT_T
 
     # Navigation routing
     if data == "nav:menu":
-        text, kb = await get_dashboard_content(chat_id)
-        await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
+        text = await get_dashboard_content(chat_id)
+        await query.edit_message_text(text, parse_mode="HTML")
 
     elif data == "nav:schedule":
-        text, kb = await get_schedule_content(chat_id)
-        await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
+        text = await get_schedule_content(chat_id)
+        await query.edit_message_text(text, parse_mode="HTML")
 
     elif data == "nav:countdown":
-        text, kb = await get_countdown_content(chat_id)
-        await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
+        text = await get_countdown_content(chat_id)
+        await query.edit_message_text(text, parse_mode="HTML")
 
     elif data == "nav:tips":
-        text, kb = await get_tips_content()
-        await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
+        text = await get_tips_content()
+        await query.edit_message_text(text, parse_mode="HTML")
 
     elif data == "nav:tutors":
-        text, kb = await get_tutors_content()
-        await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
+        text = await get_tutors_content()
+        await query.edit_message_text(text, parse_mode="HTML", disable_web_page_preview=True)
 
     elif data == "nav:contact":
-        text, kb = await get_contact_content()
-        await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
+        text = await get_contact_content()
+        await query.edit_message_text(text, parse_mode="HTML", disable_web_page_preview=True)
 
     elif data == "nav:timezone":
         text, kb = await get_timezone_menu_content(chat_id)
         await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
 
     elif data == "nav:status":
-        text, kb = await get_status_content(chat_id)
-        await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
+        text = await get_status_content(chat_id)
+        await query.edit_message_text(text, parse_mode="HTML")
 
     elif data == "action:toggle_sub":
         active_subs = await get_active_subscribers()
@@ -655,8 +561,8 @@ async def inline_callback_router(update: Update, context: ContextTypes.DEFAULT_T
         else:
             user = update.effective_user
             await add_or_reactivate_subscriber(chat_id, user.username, user.first_name)
-        text, kb = await get_status_content(chat_id)
-        await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
+        text = await get_status_content(chat_id)
+        await query.edit_message_text(text, parse_mode="HTML")
 
     elif data.startswith("set_tz:"):
         tz_code = data.split(":", 1)[1]
@@ -893,8 +799,8 @@ async def contact_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
 
     if not context.args:
-        text, kb = await get_contact_content()
-        await update.message.reply_text(text, reply_markup=kb, parse_mode="HTML")
+        text = await get_contact_content()
+        await update.message.reply_text(text, parse_mode="HTML", disable_web_page_preview=True)
         return
 
     user_message = update.message.text.partition(" ")[2].strip()
@@ -1039,20 +945,6 @@ async def chat_member_update_handler(update: Update, context: ContextTypes.DEFAU
         "📢 Instant Score Release Drops\n\n"
         "<b>Commands:</b> /countdown, /schedule, /tips, /timezone"
     )
-    group_kb = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("⏳ Live Countdown", callback_data="nav:countdown"),
-            InlineKeyboardButton("📅 SAT Schedule", callback_data="nav:schedule"),
-        ],
-        [
-            InlineKeyboardButton("🌐 Score Portal", url="https://studentscores.collegeboard.org/"),
-        ],
-    ])
-
-    try:
-        await context.bot.send_message(chat_id=chat.id, text=welcome_msg, reply_markup=group_kb, parse_mode="HTML")
-    except Exception as e:
-        logger.error("Failed to send welcome message to group %s: %s", chat.id, e)
     group_kb = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("⏳ Live Countdown", callback_data="nav:countdown"),

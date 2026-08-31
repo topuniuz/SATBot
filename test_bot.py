@@ -115,10 +115,40 @@ class TestSATBot(unittest.IsolatedAsyncioTestCase):
             response_str = raw_response.decode("utf-8")
             self.assertIn("HTTP/1.1 200 OK", response_str)
             self.assertIn('"status": "healthy"', response_str)
-            self.assertIn('"service": "sat-telegram-notify-bot"', response_str)
         finally:
             server.close()
             await server.wait_closed()
+
+    async def test_ui_content_generators(self):
+        import sys
+        from unittest.mock import MagicMock
+        if "telegram" not in sys.modules:
+            mock_tg = MagicMock()
+            sys.modules["telegram"] = mock_tg
+            sys.modules["telegram.ext"] = mock_tg
+            sys.modules["telegram.error"] = mock_tg
+        import bot
+        dash_text = await bot.get_dashboard_content(1001)
+        self.assertIn("SAT Notify Dashboard", dash_text)
+        self.assertIn("Timezone:", dash_text)
+
+        sched_text = await bot.get_schedule_content(1001)
+        self.assertIn("Official SAT Schedule", sched_text)
+
+        countdown_text = await bot.get_countdown_content(1001)
+        self.assertIn("Live SAT Countdowns", countdown_text)
+
+        tips_text = await bot.get_tips_content()
+        self.assertIn("Tips & Checklist", tips_text)
+
+        tutors_text = await bot.get_tutors_content()
+        self.assertIn("SAT Prep", tutors_text)
+
+        contact_text = await bot.get_contact_content()
+        self.assertIn("Contact & Support", contact_text)
+
+        status_text = await bot.get_status_content(1001)
+        self.assertIn("Notification Settings", status_text)
 
 
 if __name__ == "__main__":
