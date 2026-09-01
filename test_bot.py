@@ -17,13 +17,21 @@ import web_server
 class TestSATBot(unittest.IsolatedAsyncioTestCase):
 
     async def asyncSetUp(self):
-        if os.path.exists("test_sat_bot.db"):
-            os.remove("test_sat_bot.db")
+        for f in ["test_sat_bot.db", "test_sat_bot.db-shm", "test_sat_bot.db-wal", "subscribers_snapshot.json"]:
+            if os.path.exists(f):
+                try:
+                    os.remove(f)
+                except Exception:
+                    pass
         await database.init_db()
 
     async def asyncTearDown(self):
-        if os.path.exists("test_sat_bot.db"):
-            os.remove("test_sat_bot.db")
+        for f in ["test_sat_bot.db", "test_sat_bot.db-shm", "test_sat_bot.db-wal", "subscribers_snapshot.json"]:
+            if os.path.exists(f):
+                try:
+                    os.remove(f)
+                except Exception:
+                    pass
 
     async def test_subscriber_and_timezone_management(self):
         # Add a new subscriber
@@ -34,16 +42,16 @@ class TestSATBot(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(is_new)
 
-        # Check default timezone
+        # Check default timezone (Tashkent, Uzbekistan)
         tz = await database.get_user_timezone(1001)
-        self.assertEqual(tz, "US/Eastern")
+        self.assertEqual(tz, "Asia/Tashkent")
 
         # Update timezone
-        tz_ok = await database.set_user_timezone(1001, "Asia/Tashkent")
+        tz_ok = await database.set_user_timezone(1001, "US/Eastern")
         self.assertTrue(tz_ok)
 
         new_tz = await database.get_user_timezone(1001)
-        self.assertEqual(new_tz, "Asia/Tashkent")
+        self.assertEqual(new_tz, "US/Eastern")
 
         active = await database.get_active_subscribers()
         self.assertIn(1001, active)
@@ -54,6 +62,36 @@ class TestSATBot(unittest.IsolatedAsyncioTestCase):
 
         active_after = await database.get_active_subscribers()
         self.assertNotIn(1001, active_after)
+
+    async def test_snapshot_persistence_and_restore(self):
+        # Add subscribers
+        await database.add_or_reactivate_subscriber(1001, "user1", "User One")
+        await database.add_or_reactivate_subscriber(1002, "user2", "User Two")
+        await database.set_user_timezone(1002, "Europe/London")
+
+        stats_before = await database.get_subscriber_stats()
+        self.assertEqual(stats_before["active"], 2)
+
+        # Simulate ephemeral container redeploy (db file deleted, snapshot remains)
+        for f in ["test_sat_bot.db", "test_sat_bot.db-shm", "test_sat_bot.db-wal"]:
+            if os.path.exists(f):
+                os.remove(f)
+
+        # Clear in-memory timezone cache
+        database._TIMEZONE_CACHE.clear()
+
+        # Re-initialize DB (as happens on bot startup)
+        await database.init_db()
+
+        # Check that subscribers were recovered from snapshot
+        stats_after = await database.get_subscriber_stats()
+        self.assertEqual(stats_after["active"], 2)
+        self.assertEqual(stats_after["total"], 2)
+
+        tz1 = await database.get_user_timezone(1001)
+        tz2 = await database.get_user_timezone(1002)
+        self.assertEqual(tz1, "Asia/Tashkent")
+        self.assertEqual(tz2, "Europe/London")
 
     async def test_notification_deduplication(self):
         event_key = "test_event_2026"

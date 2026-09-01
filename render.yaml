@@ -11,6 +11,10 @@ services:
       - key: ADMIN_USER_ID
         sync: false
       - key: TIMEZONE
-        value: US/Eastern
+        value: Asia/Tashkent
       - key: PORT
         value: 8080
+      - key: DATABASE_URL
+        sync: false
+      - key: DB_PATH
+        sync: false

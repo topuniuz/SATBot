@@ -104,7 +104,7 @@ BOT_TOKEN=your_telegram_bot_token_here
 ADMIN_USER_ID=your_numeric_telegram_user_id
 ADMIN_CONTACT=@mx767
 PORT=8080
-TIMEZONE=US/Eastern
+TIMEZONE=Asia/Tashkent
 ```
 
 ### 4. Run the Test Suite

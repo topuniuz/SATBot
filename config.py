@@ -26,16 +26,23 @@ if ADMIN_CONTACT and not ADMIN_CONTACT.startswith("@") and not ADMIN_CONTACT.sta
 # Server Port (for Render web service / health check)
 PORT = int(os.getenv("PORT", "8080"))
 
-# Timezone (College Board releases scores in US/Eastern)
-TIMEZONE_NAME = os.getenv("TIMEZONE", "US/Eastern")
+# Database configuration
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+
+# SQLite Database path (auto-detects Render persistent disk at /var/data)
+_default_db_path = "/var/data/sat_bot.db" if os.path.isdir("/var/data") else "sat_bot.db"
+DB_PATH = os.getenv("DB_PATH", _default_db_path)
+
+# Default Timezone: Tashkent, Uzbekistan (UZT, UTC+5)
+TIMEZONE_NAME = os.getenv("TIMEZONE", "Asia/Tashkent")
 try:
     TIMEZONE = ZoneInfo(TIMEZONE_NAME)
 except Exception:
-    import datetime
-    TIMEZONE = datetime.timezone.utc
-
-# SQLite Database path
-DB_PATH = os.getenv("DB_PATH", "sat_bot.db")
+    try:
+        TIMEZONE = ZoneInfo("Asia/Tashkent")
+    except Exception:
+        import datetime
+        TIMEZONE = datetime.timezone.utc
 
 # Telegram Custom Emoji IDs (from packs like TgAndroidIcons)
 CUSTOM_EMOJIS = {
@@ -165,8 +172,9 @@ SAT_SCHEDULE = [
 ]
 
 
-# Popular timezones for user selection
+# Popular timezones for user selection (Default: Tashkent, Uzbekistan)
 POPULAR_TIMEZONES = [
+    ("🇺🇿 Uzbekistan (Tashkent, UZT)", "Asia/Tashkent"),
     ("🇺🇸 US Eastern (New York, ET)", "US/Eastern"),
     ("🇺🇸 US Central (Chicago, CT)", "US/Central"),
     ("🇺🇸 US Mountain (Denver, MT)", "US/Mountain"),
@@ -175,7 +183,6 @@ POPULAR_TIMEZONES = [
     ("🇪🇺 Central Europe (Paris, Berlin)", "Europe/Paris"),
     ("🇹🇷 Turkey (Istanbul)", "Europe/Istanbul"),
     ("🇦🇪 UAE (Dubai, GST)", "Asia/Dubai"),
-    ("🇺🇿 Uzbekistan (Tashkent, UZT)", "Asia/Tashkent"),
     ("🇰🇿 Kazakhstan (Almaty, ALMT)", "Asia/Almaty"),
     ("🇵🇰 Pakistan (Karachi, PKT)", "Asia/Karachi"),
     ("🇮🇳 India (Kolkata, IST)", "Asia/Kolkata"),
@@ -187,19 +194,19 @@ POPULAR_TIMEZONES = [
 
 
 def get_user_zoneinfo(tz_name: str):
-    """Safely returns ZoneInfo for a timezone string, falling back to US/Eastern."""
+    """Safely returns ZoneInfo for a timezone string, falling back to Asia/Tashkent."""
     try:
         return ZoneInfo(tz_name)
     except Exception:
         try:
-            return ZoneInfo("US/Eastern")
+            return ZoneInfo("Asia/Tashkent")
         except Exception:
             import datetime
             return datetime.timezone.utc
 
 
 def get_current_date(tz_name: str = None) -> date:
-    """Returns today's date in specified timezone or default US/Eastern."""
+    """Returns today's date in specified timezone or default Asia/Tashkent."""
     tz = get_user_zoneinfo(tz_name) if tz_name else TIMEZONE
     return datetime.now(tz).date()
 
