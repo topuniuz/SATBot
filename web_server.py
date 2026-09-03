@@ -103,8 +103,10 @@ async def handle_http_connection(reader: asyncio.StreamReader, writer: asyncio.S
         if method == "POST" and path.startswith("/webhook"):
             if _TELEGRAM_APP and body:
                 try:
+                    payload_str = body.decode("utf-8", errors="ignore")
+                    logger.info("Telegram Webhook Update: %s", payload_str)
                     from telegram import Update
-                    data = json.loads(body.decode("utf-8"))
+                    data = json.loads(payload_str)
                     update = Update.de_json(data, _TELEGRAM_APP.bot)
                     asyncio.create_task(_TELEGRAM_APP.process_update(update))
                 except Exception as e:

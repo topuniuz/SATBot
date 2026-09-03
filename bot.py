@@ -1155,42 +1155,141 @@ async def test_score_eve_command(update: Update, context: ContextTypes.DEFAULT_T
         await update.message.reply_text(f"🧪 <b>[Admin Preview: 1 Day Before Scores]</b>\n\n{msg}", parse_mode="HTML", disable_web_page_preview=True)
 
 
+def extract_users_from_raw_text(raw_text: str) -> list[dict]:
+    """Parses JSON arrays, JSON objects, webhook payloads, Render log dumps, or comma/space-separated user IDs."""
+    import re
+    records = []
+    seen = set()
+    now = datetime.now(timezone.utc).isoformat()
+
+    # 1. Try parsing full JSON array
+    try:
+        data = json.loads(raw_text.strip())
+        if isinstance(data, list):
+            for item in data:
+                if isinstance(item, dict) and "chat_id" in item:
+                    cid = int(item["chat_id"])
+                    if cid not in seen:
+                        seen.add(cid)
+                        records.append(item)
+            if records:
+                return records
+    except Exception:
+        pass
+
+    # 2. Extract from JSON-like fragments (e.g. {"id": 123456, "first_name": "...", "username": "..."})
+    user_blocks = re.findall(r'\{[^{}]*?"id"\s*:\s*(\d{6,12})[^{}]*?\}', raw_text)
+    for block in user_blocks:
+        try:
+            m_id = re.search(r'"id"\s*:\s*(\d{6,12})', block)
+            if m_id:
+                cid = int(m_id.group(1))
+                if cid not in seen:
+                    seen.add(cid)
+                    m_user = re.search(r'"username"\s*:\s*"([^"]+)"', block)
+                    m_first = re.search(r'"first_name"\s*:\s*"([^"]+)"', block)
+                    records.append({
+                        "chat_id": cid,
+                        "username": m_user.group(1) if m_user else None,
+                        "first_name": m_first.group(1) if m_first else f"User {cid}",
+                        "timezone": "Asia/Tashkent",
+                        "is_active": 1,
+                        "subscribed_at": now,
+                        "updated_at": now,
+                    })
+        except Exception:
+            pass
+
+    # 3. Extract chat_id patterns: "chat_id": 123456789 or chat_id=123456789
+    cid_matches = re.findall(r'chat_id[":=\s]+(\d{6,12})', raw_text, re.IGNORECASE)
+    for cid_str in cid_matches:
+        cid = int(cid_str)
+        if cid not in seen and cid not in (10000000, 20260904):
+            seen.add(cid)
+            records.append({
+                "chat_id": cid,
+                "username": None,
+                "first_name": f"User {cid}",
+                "timezone": "Asia/Tashkent",
+                "is_active": 1,
+                "subscribed_at": now,
+                "updated_at": now,
+            })
+
+    # 4. Extract any standalone 4-12 digit numbers (Telegram user IDs)
+    digits = re.findall(r'\b(\d{4,12})\b', raw_text)
+    for d in digits:
+        cid = int(d)
+        if cid not in seen and cid not in (10000000, 20260904, 18000000):
+            seen.add(cid)
+            records.append({
+                "chat_id": cid,
+                "username": None,
+                "first_name": f"User {cid}",
+                "timezone": "Asia/Tashkent",
+                "is_active": 1,
+                "subscribed_at": now,
+                "updated_at": now,
+            })
+
+    return records
+
+
 async def restore_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Admin command: /restore - Restores database from pinned cloud backup or attached JSON file."""
+    """Admin command: /restore - Restores database from pinned cloud backup, attached file, or pasted logs/JSON."""
     chat_id = update.effective_chat.id
     if not is_admin(chat_id):
         await update.message.reply_text("⛔ You are not authorized to use this command.")
         return
 
-    # 1. Attached document or replied-to document
+    # Case A: Document attached or replied to (supports .json, .txt, or log file)
     doc = update.message.document
     if not doc and update.message.reply_to_message and update.message.reply_to_message.document:
         doc = update.message.reply_to_message.document
 
     if doc:
-        status_msg = await update.message.reply_text("⏳ Downloading and importing backup file...")
+        status_msg = await update.message.reply_text("⏳ Downloading and scanning file for subscribers...")
         try:
             tg_file = await context.bot.get_file(doc.file_id)
             content = await tg_file.download_as_bytearray()
-            data = json.loads(content.decode("utf-8"))
-            if isinstance(data, list):
-                count = await import_subscribers_list(data)
+            raw_text = content.decode("utf-8", errors="ignore")
+            records = extract_users_from_raw_text(raw_text)
+            if records:
+                count = await import_subscribers_list(records)
                 await status_msg.edit_text(
                     f"✅ <b>Database Successfully Restored!</b>\n\n"
-                    f"• 👥 Imported: <b>{count} subscribers</b>\n"
+                    f"• 👥 Extracted & Imported: <b>{count} subscribers</b>\n"
                     f"• 💾 Saved to persistent snapshot and memory.",
                     parse_mode="HTML",
                 )
                 asyncio.create_task(sync_telegram_cloud_backup(context.bot, force=True))
                 return
             else:
-                await status_msg.edit_text("⚠️ Invalid JSON format: expected a list of subscriber objects.")
+                await status_msg.edit_text("⚠️ No subscriber records or chat IDs found in this file.")
                 return
         except Exception as e:
             await status_msg.edit_text(f"❌ Failed to parse backup file: {e}")
             return
 
-    # 2. Check auto-restore from pinned cloud backup
+    # Case B: Text provided directly after /restore or in replied message
+    raw_args = " ".join(context.args) if context.args else ""
+    if not raw_args and update.message.reply_to_message and update.message.reply_to_message.text:
+        raw_args = update.message.reply_to_message.text
+
+    if raw_args:
+        records = extract_users_from_raw_text(raw_args)
+        if records:
+            count = await import_subscribers_list(records)
+            await update.message.reply_text(
+                f"✅ <b>Database Successfully Restored!</b>\n\n"
+                f"• 👥 Extracted & Imported: <b>{count} subscribers</b>\n"
+                f"• 💾 Saved to persistent snapshot.",
+                parse_mode="HTML",
+            )
+            asyncio.create_task(sync_telegram_cloud_backup(context.bot, force=True))
+            return
+
+    # Case C: Check auto-restore from pinned cloud backup
     status_msg = await update.message.reply_text("🔍 Checking for Telegram pinned cloud backup...")
     restored = await auto_restore_from_telegram_cloud(context.bot)
     if restored > 0:
@@ -1200,51 +1299,42 @@ async def restore_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # 3. Help message
+    # Case D: Help message
     all_users = await get_all_subscribers()
     await status_msg.edit_text(
         "ℹ️ <b>Database Recovery Options:</b>\n\n"
         f"• Current Users in Database: <b>{len(all_users)}</b>\n\n"
-        "1. <b>Upload Backup:</b> Send/reply with a <code>subscribers.json</code> backup file and caption <code>/restore</code>.\n"
-        "2. <b>Batch Import IDs:</b> Type <code>/import_users &lt;id1&gt; &lt;id2&gt; ...</code> to register known user IDs.\n"
-        "3. <b>Add Single User:</b> Type <code>/add_user &lt;chat_id&gt; [username] [first_name]</code>.\n\n"
-        "💡 <i>Note: As soon as any user interacts with the bot, it automatically pins a backup in your private chat and auto-restores on future redeploys!</i>",
+        "1. <b>Paste Render Logs or IDs:</b> Run <code>/restore &lt;paste logs or text&gt;</code>\n"
+        "2. <b>Upload Backup / Log File:</b> Send any <code>.json</code> or <code>.txt</code> file with caption <code>/restore</code>\n"
+        "3. <b>Batch Import IDs:</b> Type <code>/import_users &lt;id1&gt; &lt;id2&gt; ...</code>\n"
+        "4. <b>Add Single User:</b> Type <code>/add_user &lt;chat_id&gt; [username] [first_name]</code>\n\n"
+        "💡 <i>Tip: The bot now pins an automatic cloud backup in this chat so subscribers are NEVER lost on future pushes!</i>",
         parse_mode="HTML",
     )
 
 
 async def import_users_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Admin command: /import_users <id1> <id2> ... to batch import user chat IDs."""
+    """Admin command: /import_users <id1> <id2> ... or paste raw text to batch import user chat IDs."""
     chat_id = update.effective_chat.id
     if not is_admin(chat_id):
         await update.message.reply_text("⛔ You are not authorized to use this command.")
         return
 
-    if not context.args:
+    raw_text = " ".join(context.args) if context.args else ""
+    if not raw_text and update.message.reply_to_message and update.message.reply_to_message.text:
+        raw_text = update.message.reply_to_message.text
+
+    if not raw_text:
         await update.message.reply_text(
             "Usage: <code>/import_users &lt;id1&gt; &lt;id2&gt; ...</code>\n\n"
-            "Example: <code>/import_users 12345678 87654321</code>",
+            "You can also paste raw Render log text or comma/space-separated Telegram IDs.",
             parse_mode="HTML",
         )
         return
 
-    records = []
-    now = datetime.now(timezone.utc).isoformat()
-    for arg in context.args:
-        clean_id = arg.strip().strip(",").strip(";")
-        if clean_id.lstrip("-").isdigit():
-            records.append({
-                "chat_id": int(clean_id),
-                "username": None,
-                "first_name": f"User {clean_id}",
-                "timezone": "Asia/Tashkent",
-                "is_active": 1,
-                "subscribed_at": now,
-                "updated_at": now,
-            })
-
+    records = extract_users_from_raw_text(raw_text)
     if not records:
-        await update.message.reply_text("⚠️ No valid numeric User IDs found in arguments.")
+        await update.message.reply_text("⚠️ No valid numeric User IDs or subscriber records found.")
         return
 
     count = await import_subscribers_list(records)
