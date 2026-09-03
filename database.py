@@ -312,6 +312,57 @@ async def get_all_subscribers() -> list[dict]:
     return await asyncio.to_thread(_get_all_subscribers_sync)
 
 
+def _import_subscribers_list_sync(records: list[dict]) -> int:
+    """Imports or merges a list of subscriber dictionaries into database and snapshot."""
+    if not records:
+        return 0
+
+    now = datetime.now(timezone.utc).isoformat()
+    imported = 0
+    with _get_db() as conn:
+        for r in records:
+            if not isinstance(r, dict) or "chat_id" not in r:
+                continue
+            cid = int(r["chat_id"])
+            uname = r.get("username")
+            fname = r.get("first_name")
+            tz = r.get("timezone") or DEFAULT_TIMEZONE
+            if tz in ("US/Eastern", "UTC"):
+                tz = DEFAULT_TIMEZONE
+            is_act = r.get("is_active", 1)
+            sub_at = r.get("subscribed_at") or now
+            upd_at = r.get("updated_at") or now
+
+            conn.execute(
+                f"""
+                INSERT INTO subscribers (chat_id, username, first_name, timezone, is_active, subscribed_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(chat_id) DO UPDATE SET
+                    username = coalesce(excluded.username, subscribers.username),
+                    first_name = coalesce(excluded.first_name, subscribers.first_name),
+                    timezone = CASE
+                        WHEN subscribers.timezone IS NULL OR subscribers.timezone = '' OR subscribers.timezone = 'US/Eastern' OR subscribers.timezone = 'UTC'
+                        THEN coalesce(excluded.timezone, '{DEFAULT_TIMEZONE}')
+                        ELSE subscribers.timezone
+                    END,
+                    is_active = max(subscribers.is_active, excluded.is_active),
+                    subscribed_at = coalesce(subscribers.subscribed_at, excluded.subscribed_at),
+                    updated_at = max(coalesce(subscribers.updated_at, ''), coalesce(excluded.updated_at, ''))
+                """,
+                (cid, uname, fname, tz, is_act, sub_at, upd_at),
+            )
+            imported += 1
+        conn.commit()
+
+    _save_snapshot_sync()
+    return imported
+
+
+async def import_subscribers_list(records: list[dict]) -> int:
+    """Imports or merges a list of subscriber dicts asynchronously."""
+    return await asyncio.to_thread(_import_subscribers_list_sync, records)
+
+
 def _get_subscriber_stats_sync() -> dict:
     with _get_db() as conn:
         cursor = conn.execute("SELECT COUNT(*), SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) FROM subscribers")

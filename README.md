@@ -56,8 +56,10 @@
 | `/test_eve [me\|all]` | Send 1-day-before score release reminder notification |
 | `/broadcast <msg>` | Broadcast custom formatted announcement to all subscribers |
 | `/announce_scores` | Instantly trigger score release broadcast for the current SAT |
-| `/reply <user_id> <msg>` | Reply directly to a student's support message |
 | `/stats` | View real-time active and registered subscriber counts |
+| `/restore` | Auto-restore from Telegram cloud pin or uploaded backup file |
+| `/import_users <ids...>` | Batch import known Telegram user IDs into database |
+| `/add_user <chat_id>` | Add or register a specific user directly |
 
 ---
 

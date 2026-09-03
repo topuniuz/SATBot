@@ -1,7 +1,10 @@
 import os
+import io
+import json
 import asyncio
 import logging
-from datetime import datetime, date
+from datetime import datetime, date, timezone
+from zoneinfo import ZoneInfo
 from telegram import (
     Update,
     InlineKeyboardButton,
@@ -47,6 +50,7 @@ from database import (
     get_user_timezone,
     get_active_subscribers,
     get_all_subscribers,
+    import_subscribers_list,
     get_subscriber_stats,
     is_notification_sent,
     mark_notification_sent,
@@ -99,6 +103,10 @@ def get_admin_panel_inline_keyboard() -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton("🧪 Test Exam Morning", callback_data="admin:test_morning"),
             InlineKeyboardButton("⚡ Test Scores Tomorrow", callback_data="admin:test_score_1d"),
+        ],
+        [
+            InlineKeyboardButton("🔄 Sync Cloud Backup", callback_data="admin:sync_backup"),
+            InlineKeyboardButton("📥 Restore from Cloud", callback_data="admin:restore_cloud"),
         ],
     ]
     return InlineKeyboardMarkup(buttons)
@@ -363,6 +371,83 @@ async def broadcast_message(bot, text: str, parse_mode: str = "HTML") -> tuple[i
 
 
 # ---------------------------------------------------------
+# TELEGRAM CLOUD PINNED BACKUP & RECOVERY (Render-Proof)
+# ---------------------------------------------------------
+
+_LAST_BACKUP_HASH = None
+
+
+async def sync_telegram_cloud_backup(bot, force: bool = False):
+    """Backs up subscriber database to primary admin's Telegram chat as a pinned document."""
+    global _LAST_BACKUP_HASH
+    if not ADMIN_IDS:
+        return
+
+    admin_id = ADMIN_IDS[0]
+    all_users = await get_all_subscribers()
+    if not all_users:
+        return
+
+    import hashlib
+    json_str = json.dumps(all_users, ensure_ascii=False, indent=2)
+    curr_hash = hashlib.md5(json_str.encode("utf-8")).hexdigest()
+    if not force and curr_hash == _LAST_BACKUP_HASH:
+        return
+
+    _LAST_BACKUP_HASH = curr_hash
+    bio = io.BytesIO(json_str.encode("utf-8"))
+    bio.name = "sat_subscribers_cloud_backup.json"
+
+    try:
+        msg = await bot.send_document(
+            chat_id=admin_id,
+            document=bio,
+            caption=(
+                f"📦 <b>[Cloud Database Backup]</b>\n"
+                f"👥 Total Subscribers: <b>{len(all_users)}</b>\n"
+                f"🕒 Timestamp: {datetime.now(ZoneInfo('Asia/Tashkent')).strftime('%Y-%m-%d %H:%M:%S')} Tashkent\n"
+                f"<i>This pinned backup automatically recovers all subscribers across any container redeployment.</i>"
+            ),
+            parse_mode="HTML",
+            disable_notification=True,
+        )
+        try:
+            await bot.pin_chat_message(chat_id=admin_id, message_id=msg.message_id, disable_notification=True)
+        except Exception as pin_err:
+            logger.debug("Could not pin backup message: %s", pin_err)
+    except Exception as e:
+        logger.warning("Failed to upload cloud backup to admin %s: %s", admin_id, e)
+
+
+async def auto_restore_from_telegram_cloud(bot) -> int:
+    """Restores subscribers from pinned backup message in admin chat on container startup or after redeploy."""
+    if not ADMIN_IDS:
+        return 0
+
+    total_restored = 0
+    for admin_id in ADMIN_IDS:
+        try:
+            chat = await bot.get_chat(admin_id)
+            if not chat.pinned_message:
+                continue
+
+            doc = chat.pinned_message.document
+            if doc and ("backup" in (doc.file_name or "").lower() or "subscriber" in (doc.file_name or "").lower()):
+                tg_file = await bot.get_file(doc.file_id)
+                file_bytes = await tg_file.download_as_bytearray()
+                data = json.loads(file_bytes.decode("utf-8"))
+                if isinstance(data, list) and len(data) > 0:
+                    count = await import_subscribers_list(data)
+                    logger.info("Successfully restored %d subscribers from admin %s pinned backup!", count, admin_id)
+                    total_restored += count
+                    break
+        except Exception as e:
+            logger.debug("Could not auto-restore from admin %s: %s", admin_id, e)
+
+    return total_restored
+
+
+# ---------------------------------------------------------
 # COMMAND & MESSAGE HANDLERS
 # ---------------------------------------------------------
 
@@ -378,6 +463,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         first_name=user.first_name,
     )
 
+    asyncio.create_task(sync_telegram_cloud_backup(context.bot))
+
     text = await get_dashboard_content(chat_id)
     await update.message.reply_text(
         text=text,
@@ -392,6 +479,21 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(chat_id):
         await update.message.reply_text("⛔ You are not authorized to view the admin panel.")
         return
+
+    # Ensure admin is registered as a user
+    user = update.effective_user
+    await add_or_reactivate_subscriber(
+        chat_id=chat_id,
+        username=user.username,
+        first_name=user.first_name,
+    )
+
+    # If DB currently shows <= 1 user, attempt auto-recovery from Telegram pinned cloud backup
+    stats = await get_subscriber_stats()
+    if stats.get("total", 0) <= 1:
+        await auto_restore_from_telegram_cloud(context.bot)
+
+    asyncio.create_task(sync_telegram_cloud_backup(context.bot))
 
     text, kb = await get_admin_panel_content()
     await update.message.reply_text(text, reply_markup=kb, parse_mode="HTML")
@@ -877,6 +979,23 @@ async def inline_callback_router(update: Update, context: ContextTypes.DEFAULT_T
         ])
         await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
 
+    elif data == "admin:sync_backup":
+        if not is_admin(chat_id):
+            await query.answer("⛔ Unauthorized", show_alert=True)
+            return
+        await sync_telegram_cloud_backup(context.bot, force=True)
+        await query.answer("✅ Cloud backup synced and pinned in your chat!", show_alert=True)
+
+    elif data == "admin:restore_cloud":
+        if not is_admin(chat_id):
+            await query.answer("⛔ Unauthorized", show_alert=True)
+            return
+        restored = await auto_restore_from_telegram_cloud(context.bot)
+        stats = await get_subscriber_stats()
+        await query.answer(f"✅ Cloud restore complete! Total subscribers: {stats.get('total', 0)}", show_alert=True)
+        text, kb = await get_admin_panel_content()
+        await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
+
 
 # ---------------------------------------------------------
 # ADMIN COMMANDS
@@ -1034,6 +1153,140 @@ async def test_score_eve_command(update: Update, context: ContextTypes.DEFAULT_T
         )
     else:
         await update.message.reply_text(f"🧪 <b>[Admin Preview: 1 Day Before Scores]</b>\n\n{msg}", parse_mode="HTML", disable_web_page_preview=True)
+
+
+async def restore_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin command: /restore - Restores database from pinned cloud backup or attached JSON file."""
+    chat_id = update.effective_chat.id
+    if not is_admin(chat_id):
+        await update.message.reply_text("⛔ You are not authorized to use this command.")
+        return
+
+    # 1. Attached document or replied-to document
+    doc = update.message.document
+    if not doc and update.message.reply_to_message and update.message.reply_to_message.document:
+        doc = update.message.reply_to_message.document
+
+    if doc:
+        status_msg = await update.message.reply_text("⏳ Downloading and importing backup file...")
+        try:
+            tg_file = await context.bot.get_file(doc.file_id)
+            content = await tg_file.download_as_bytearray()
+            data = json.loads(content.decode("utf-8"))
+            if isinstance(data, list):
+                count = await import_subscribers_list(data)
+                await status_msg.edit_text(
+                    f"✅ <b>Database Successfully Restored!</b>\n\n"
+                    f"• 👥 Imported: <b>{count} subscribers</b>\n"
+                    f"• 💾 Saved to persistent snapshot and memory.",
+                    parse_mode="HTML",
+                )
+                asyncio.create_task(sync_telegram_cloud_backup(context.bot, force=True))
+                return
+            else:
+                await status_msg.edit_text("⚠️ Invalid JSON format: expected a list of subscriber objects.")
+                return
+        except Exception as e:
+            await status_msg.edit_text(f"❌ Failed to parse backup file: {e}")
+            return
+
+    # 2. Check auto-restore from pinned cloud backup
+    status_msg = await update.message.reply_text("🔍 Checking for Telegram pinned cloud backup...")
+    restored = await auto_restore_from_telegram_cloud(context.bot)
+    if restored > 0:
+        await status_msg.edit_text(
+            f"✅ <b>Auto-Restored {restored} subscribers from pinned Telegram cloud backup!</b>",
+            parse_mode="HTML",
+        )
+        return
+
+    # 3. Help message
+    all_users = await get_all_subscribers()
+    await status_msg.edit_text(
+        "ℹ️ <b>Database Recovery Options:</b>\n\n"
+        f"• Current Users in Database: <b>{len(all_users)}</b>\n\n"
+        "1. <b>Upload Backup:</b> Send/reply with a <code>subscribers.json</code> backup file and caption <code>/restore</code>.\n"
+        "2. <b>Batch Import IDs:</b> Type <code>/import_users &lt;id1&gt; &lt;id2&gt; ...</code> to register known user IDs.\n"
+        "3. <b>Add Single User:</b> Type <code>/add_user &lt;chat_id&gt; [username] [first_name]</code>.\n\n"
+        "💡 <i>Note: As soon as any user interacts with the bot, it automatically pins a backup in your private chat and auto-restores on future redeploys!</i>",
+        parse_mode="HTML",
+    )
+
+
+async def import_users_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin command: /import_users <id1> <id2> ... to batch import user chat IDs."""
+    chat_id = update.effective_chat.id
+    if not is_admin(chat_id):
+        await update.message.reply_text("⛔ You are not authorized to use this command.")
+        return
+
+    if not context.args:
+        await update.message.reply_text(
+            "Usage: <code>/import_users &lt;id1&gt; &lt;id2&gt; ...</code>\n\n"
+            "Example: <code>/import_users 12345678 87654321</code>",
+            parse_mode="HTML",
+        )
+        return
+
+    records = []
+    now = datetime.now(timezone.utc).isoformat()
+    for arg in context.args:
+        clean_id = arg.strip().strip(",").strip(";")
+        if clean_id.lstrip("-").isdigit():
+            records.append({
+                "chat_id": int(clean_id),
+                "username": None,
+                "first_name": f"User {clean_id}",
+                "timezone": "Asia/Tashkent",
+                "is_active": 1,
+                "subscribed_at": now,
+                "updated_at": now,
+            })
+
+    if not records:
+        await update.message.reply_text("⚠️ No valid numeric User IDs found in arguments.")
+        return
+
+    count = await import_subscribers_list(records)
+    await update.message.reply_text(
+        f"✅ <b>Successfully imported {count} users into database!</b>",
+        parse_mode="HTML",
+    )
+    asyncio.create_task(sync_telegram_cloud_backup(context.bot, force=True))
+
+
+async def add_user_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin command: /add_user <chat_id> [username] [first_name]"""
+    chat_id = update.effective_chat.id
+    if not is_admin(chat_id):
+        await update.message.reply_text("⛔ You are not authorized to use this command.")
+        return
+
+    if not context.args:
+        await update.message.reply_text(
+            "Usage: <code>/add_user &lt;chat_id&gt; [username] [first_name]</code>",
+            parse_mode="HTML",
+        )
+        return
+
+    cid_str = context.args[0].strip()
+    if not cid_str.lstrip("-").isdigit():
+        await update.message.reply_text("⚠️ Invalid User ID.")
+        return
+
+    target_id = int(cid_str)
+    username = context.args[1].lstrip("@") if len(context.args) > 1 else None
+    first_name = " ".join(context.args[2:]) if len(context.args) > 2 else (username or f"User {target_id}")
+
+    await add_or_reactivate_subscriber(chat_id=target_id, username=username, first_name=first_name)
+    await update.message.reply_text(
+        f"✅ <b>User Added & Subscribed:</b>\n"
+        f"• ID: <code>{target_id}</code>\n"
+        f"• Username: @{username or 'N/A'}\n"
+        f"• Name: {first_name}",
+        parse_mode="HTML",
+    )
+    asyncio.create_task(sync_telegram_cloud_backup(context.bot, force=True))
 
 
 async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1417,6 +1670,9 @@ async def main():
     application.add_handler(CommandHandler("test_score_release", test_scores_command))
     application.add_handler(CommandHandler("test_eve", test_score_eve_command))
     application.add_handler(CommandHandler("test_score_eve", test_score_eve_command))
+    application.add_handler(CommandHandler("restore", restore_command))
+    application.add_handler(CommandHandler("import_users", import_users_command))
+    application.add_handler(CommandHandler("add_user", add_user_command))
     application.add_handler(CommandHandler("reply", reply_command))
 
     # Inline Button Navigation Router
@@ -1440,6 +1696,14 @@ async def main():
     # Initialize Telegram Application
     await application.initialize()
     await application.start()
+
+    # Auto-restore subscribers from Telegram pinned cloud backup (recovers state across Render redeployments)
+    try:
+        restored = await auto_restore_from_telegram_cloud(application.bot)
+        if restored > 0:
+            logger.info("Auto-restored %d subscribers from pinned cloud backup on startup!", restored)
+    except Exception as e:
+        logger.debug("Cloud auto-restore on startup check: %s", e)
 
     webhook_base = os.getenv("WEBHOOK_URL", os.getenv("RENDER_EXTERNAL_URL", "")).rstrip("/")
     if webhook_base:

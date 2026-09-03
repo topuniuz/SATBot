@@ -275,6 +275,27 @@ class TestSATBot(unittest.IsolatedAsyncioTestCase):
         eve_call = update.message.reply_text.call_args[0][0]
         self.assertIn("SCORES RELEASE TOMORROW", eve_call)
 
+        # Test /import_users command
+        update.message.reply_text.reset_mock()
+        context.args = ["9003", "9004", "9005"]
+        await bot.import_users_command(update, context)
+        import_call = update.message.reply_text.call_args[0][0]
+        self.assertIn("Successfully imported 3 users", import_call)
+
+        all_now = await database.get_all_subscribers()
+        all_now_ids = [u["chat_id"] for u in all_now]
+        self.assertIn(9003, all_now_ids)
+        self.assertIn(9004, all_now_ids)
+        self.assertIn(9005, all_now_ids)
+
+        # Test /add_user command
+        update.message.reply_text.reset_mock()
+        context.args = ["9006", "charlie_sat", "Charlie"]
+        await bot.add_user_command(update, context)
+        add_call = update.message.reply_text.call_args[0][0]
+        self.assertIn("User Added & Subscribed", add_call)
+        self.assertIn("9006", add_call)
+
 
 if __name__ == "__main__":
     unittest.main()

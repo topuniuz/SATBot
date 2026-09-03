@@ -1,3 +1,9 @@
+databases:
+  - name: sat-bot-db
+    databaseName: sat_bot
+    user: sat_bot_user
+    plan: free
+
 services:
   - type: web
     name: sat-notify-bot
@@ -17,6 +23,8 @@ services:
       - key: PORT
         value: 8080
       - key: DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: sat-bot-db
+          property: connectionString
       - key: DB_PATH
         sync: false
