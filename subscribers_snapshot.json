@@ -1,1 +1,20 @@
-[]
+[
+  {
+    "chat_id": 1134758789,
+    "username": "mukhammadsodikov",
+    "first_name": "🥷™",
+    "timezone": "Asia/Tashkent",
+    "is_active": 1,
+    "subscribed_at": "2026-08-30T17:24:58+00:00",
+    "updated_at": "2026-09-03T13:36:40+00:00"
+  },
+  {
+    "chat_id": 1142966080,
+    "username": null,
+    "first_name": "Subscriber",
+    "timezone": "Asia/Tashkent",
+    "is_active": 1,
+    "subscribed_at": "2026-08-31T00:00:00+00:00",
+    "updated_at": "2026-09-01T04:43:13+00:00"
+  }
+]
