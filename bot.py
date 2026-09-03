@@ -37,6 +37,7 @@ from config import (
     get_upcoming_tests,
     custom_emoji,
 )
+import io
 from database import (
     init_db,
     add_or_reactivate_subscriber,
@@ -45,6 +46,7 @@ from database import (
     set_user_timezone,
     get_user_timezone,
     get_active_subscribers,
+    get_all_subscribers,
     get_subscriber_stats,
     is_notification_sent,
     mark_notification_sent,
@@ -80,10 +82,14 @@ def get_admin_panel_inline_keyboard() -> InlineKeyboardMarkup:
     buttons = [
         [
             InlineKeyboardButton("📊 Live Subscriber Stats", callback_data="admin:stats"),
-            InlineKeyboardButton("📢 Broadcast Message", callback_data="admin:broadcast_prompt"),
+            InlineKeyboardButton("👥 View All Users", callback_data="admin:users"),
         ],
         [
+            InlineKeyboardButton("📢 Broadcast Message", callback_data="admin:broadcast_prompt"),
             InlineKeyboardButton("🚀 Announce Scores Now", callback_data="admin:announce_scores"),
+        ],
+        [
+            InlineKeyboardButton("🧪 Send Test Score Alert", callback_data="admin:test_scores_menu"),
             InlineKeyboardButton("🔍 Check CB Live Feed", callback_data="admin:check_cb"),
         ],
         [
@@ -92,7 +98,7 @@ def get_admin_panel_inline_keyboard() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("🧪 Test Exam Morning", callback_data="admin:test_morning"),
-            InlineKeyboardButton("🧪 Test Score Release", callback_data="admin:test_scores"),
+            InlineKeyboardButton("⚡ Test Scores Tomorrow", callback_data="admin:test_score_1d"),
         ],
     ]
     return InlineKeyboardMarkup(buttons)
@@ -587,11 +593,14 @@ async def inline_callback_router(update: Update, context: ContextTypes.DEFAULT_T
             "📊 <b>Live Subscriber Stats</b>\n\n"
             f"🟢 <b>Active:</b> <code>{stats.get('active', 0)}</code>\n"
             f"👥 <b>Total:</b> <code>{stats.get('total', 0)}</code>\n"
-            f"⚡ <b>Engine:</b> <code>Healthy (WAL Mode)</code>\n"
+            f"🌍 <b>Main Timezone:</b> <code>Asia/Tashkent (UZT, UTC+5)</code>\n"
+            f"⚡ <b>Engine:</b> <code>Healthy (Persistent Snapshot WAL)</code>\n"
         )
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔄 Refresh Stats", callback_data="admin:stats")],
+            [InlineKeyboardButton("👥 View All Users", callback_data="admin:users")],
+            [InlineKeyboardButton("📥 Export Full List (.txt)", callback_data="admin:export_users")],
             [InlineKeyboardButton("⚡ Reactivate All Users", callback_data="admin:reactivate_all")],
+            [InlineKeyboardButton("🔄 Refresh Stats", callback_data="admin:stats")],
             [InlineKeyboardButton("👑 Back to Admin Panel", callback_data="admin:panel")],
         ])
         await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
@@ -614,6 +623,79 @@ async def inline_callback_router(update: Update, context: ContextTypes.DEFAULT_T
             [InlineKeyboardButton("👑 Back to Admin Panel", callback_data="admin:panel")],
         ])
         await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
+
+    elif data == "admin:users":
+        if not is_admin(chat_id):
+            await query.answer("⛔ Unauthorized", show_alert=True)
+            return
+        all_users = await get_all_subscribers()
+        total = len(all_users)
+        active = sum(1 for u in all_users if u.get("is_active"))
+        inactive = total - active
+
+        header = (
+            f"👥 <b>Registered Users Database</b> (All-Time)\n\n"
+            f"📊 <b>Total:</b> <code>{total}</code> | 🟢 <b>Active:</b> <code>{active}</code> | ⚪ <b>Inactive:</b> <code>{inactive}</code>\n"
+            f"🌍 <b>Main Timezone:</b> <code>Asia/Tashkent</code>\n\n"
+        )
+
+        if not all_users:
+            msg_text = header + "<i>No users found in database yet.</i>"
+        else:
+            lines = []
+            for i, u in enumerate(all_users[:30], 1):
+                name = u.get("first_name") or "User"
+                username = f"@{u['username']}" if u.get("username") else "No handle"
+                uid = u["chat_id"]
+                tz = u.get("timezone") or "Asia/Tashkent"
+                status = "🟢" if u.get("is_active") else "⚪"
+                joined = (u.get("subscribed_at") or "")[:10]
+                lines.append(f"{i}. {status} <b>{name}</b> ({username}) - <code>{uid}</code>\n   🌍 {tz} | 📅 {joined}")
+
+            user_list_str = "\n".join(lines)
+            if total > 30:
+                user_list_str += f"\n\n<i>...and {total - 30} more users. Click below to export full file.</i>"
+            msg_text = header + user_list_str
+
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📥 Export Full List (.txt)", callback_data="admin:export_users")],
+            [InlineKeyboardButton("🔄 Refresh List", callback_data="admin:users")],
+            [InlineKeyboardButton("👑 Back to Admin Panel", callback_data="admin:panel")],
+        ])
+        await query.edit_message_text(msg_text, reply_markup=kb, parse_mode="HTML")
+
+    elif data == "admin:export_users":
+        if not is_admin(chat_id):
+            await query.answer("⛔ Unauthorized", show_alert=True)
+            return
+        all_users = await get_all_subscribers()
+        out = io.StringIO()
+        out.write("====================================================\n")
+        out.write("   SAT NOTIFY BOT - COMPLETE REGISTERED USERS LIST  \n")
+        out.write("====================================================\n")
+        out.write(f"Generated: {datetime.now(ZoneInfo('Asia/Tashkent')).strftime('%Y-%m-%d %H:%M:%S')} Tashkent Time\n")
+        out.write(f"Total Users: {len(all_users)}\n\n")
+        out.write(f"{'#':<4} {'CHAT_ID':<14} {'STATUS':<10} {'TIMEZONE':<18} {'JOINED':<12} {'USERNAME':<18} {'FIRST_NAME'}\n")
+        out.write("-" * 90 + "\n")
+        for i, u in enumerate(all_users, 1):
+            status = "ACTIVE" if u.get("is_active") else "INACTIVE"
+            tz = u.get("timezone") or "Asia/Tashkent"
+            joined = (u.get("subscribed_at") or "")[:10]
+            uname = f"@{u['username']}" if u.get("username") else "N/A"
+            fname = u.get("first_name") or "N/A"
+            out.write(f"{i:<4} {u['chat_id']:<14} {status:<10} {tz:<18} {joined:<12} {uname:<18} {fname}\n")
+        
+        file_bytes = out.getvalue().encode("utf-8")
+        out.close()
+        bio = io.BytesIO(file_bytes)
+        bio.name = f"sat_bot_users_{datetime.now().strftime('%Y%m%d')}.txt"
+
+        await query.answer("📤 Sending users export file...")
+        await context.bot.send_document(
+            chat_id=chat_id,
+            document=bio,
+            caption=f"📋 Complete user database: {len(all_users)} total subscribers.",
+        )
 
     elif data == "admin:broadcast_prompt":
         if not is_admin(chat_id):
@@ -696,6 +778,84 @@ async def inline_callback_router(update: Update, context: ContextTypes.DEFAULT_T
         ])
         await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
 
+    elif data == "admin:test_scores_menu":
+        if not is_admin(chat_id):
+            await query.answer("⛔ Unauthorized", show_alert=True)
+            return
+        next_score = get_next_score_release() or {"name": "August 2026 SAT", "score_release_date": date(2026, 9, 4)}
+        text = (
+            "🧪 <b>Score Release Test Center</b>\n\n"
+            f"📅 <b>Target Test:</b> {next_score['name']}\n"
+            f"📢 <b>Score Date:</b> {next_score['score_release_date'].strftime('%A, %B %d, %Y')}\n\n"
+            "Choose an action below to test notifications before score release day:"
+        )
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📲 Send Test to Me (Private)", callback_data="admin:send_test_score_me")],
+            [InlineKeyboardButton("📢 Broadcast Test to All Users", callback_data="admin:send_test_score_all")],
+            [InlineKeyboardButton("⚡ Preview Tomorrow Alert", callback_data="admin:test_score_1d")],
+            [InlineKeyboardButton("👑 Back to Admin Panel", callback_data="admin:panel")],
+        ])
+        await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
+
+    elif data == "admin:send_test_score_me":
+        if not is_admin(chat_id):
+            await query.answer("⛔ Unauthorized", show_alert=True)
+            return
+        next_score = get_next_score_release() or {"name": "August 2026 SAT", "score_release_date": date(2026, 9, 4)}
+        eve_msg = (
+            "🧪 <b>[Test: 1 Day Before Score Release]</b>\n\n" +
+            TEMPLATES["score_release_1day"].format(
+                test_name=next_score["name"],
+                release_date=next_score["score_release_date"].strftime("%A, %B %d, %Y"),
+            )
+        )
+        morning_msg = (
+            "🧪 <b>[Test: Score Release Day Morning]</b>\n\n" +
+            TEMPLATES["score_release_morning"].format(
+                test_name=next_score["name"],
+                release_date=next_score["score_release_date"].strftime("%A, %B %d, %Y"),
+            )
+        )
+        await context.bot.send_message(chat_id=chat_id, text=eve_msg, parse_mode="HTML", disable_web_page_preview=True)
+        await context.bot.send_message(chat_id=chat_id, text=morning_msg, parse_mode="HTML", disable_web_page_preview=True)
+        await query.answer("✅ Sent 2 test alerts to your private chat!", show_alert=True)
+
+    elif data == "admin:send_test_score_all":
+        if not is_admin(chat_id):
+            await query.answer("⛔ Unauthorized", show_alert=True)
+            return
+        next_score = get_next_score_release() or {"name": "August 2026 SAT", "score_release_date": date(2026, 9, 4)}
+        announcement = TEMPLATES["score_release_1day"].format(
+            test_name=next_score["name"],
+            release_date=next_score["score_release_date"].strftime("%A, %B %d, %Y"),
+        )
+        await query.edit_message_text(f"🚀 Broadcasting pre-score-release alert for <b>{next_score['name']}</b>...", parse_mode="HTML")
+        success, failed = await broadcast_message(context.bot, announcement)
+        result_msg = (
+            "✅ <b>Pre-Score Release Alert Broadcasted</b>\n\n"
+            f"• 📤 <b>Delivered:</b> <code>{success} users</code>\n"
+            f"• ⚠️ <b>Failed / Inactive:</b> <code>{failed}</code>\n"
+        )
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("👑 Back to Admin Panel", callback_data="admin:panel")]])
+        await query.edit_message_text(result_msg, reply_markup=kb, parse_mode="HTML")
+
+    elif data == "admin:test_score_1d":
+        if not is_admin(chat_id):
+            await query.answer("⛔ Unauthorized", show_alert=True)
+            return
+        next_score = get_next_score_release() or {"name": "August 2026 SAT", "score_release_date": date(2026, 9, 4)}
+        preview_text = TEMPLATES["score_release_1day"].format(
+            test_name=next_score["name"],
+            release_date=next_score["score_release_date"].strftime("%A, %B %d, %Y"),
+        )
+        text = f"🧪 <b>[Admin Preview: 1 Day Before Score Release]</b>\n\n" + preview_text
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📲 Send Test to Me", callback_data="admin:send_test_score_me")],
+            [InlineKeyboardButton("📢 Broadcast Test to All", callback_data="admin:send_test_score_all")],
+            [InlineKeyboardButton("👑 Back to Admin Panel", callback_data="admin:panel")],
+        ])
+        await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML", disable_web_page_preview=True)
+
     elif data in ["admin:test_7d", "admin:test_1d", "admin:test_morning", "admin:test_scores"]:
         if not is_admin(chat_id):
             await query.answer("⛔ Unauthorized", show_alert=True)
@@ -711,7 +871,10 @@ async def inline_callback_router(update: Update, context: ContextTypes.DEFAULT_T
             preview_text = TEMPLATES["score_release_morning"].format(test_name=next_test["name"], release_date=next_test["score_release_date"].strftime("%A, %B %d, %Y"))
         
         text = f"🧪 <b>[Admin Preview]</b>\n\n" + preview_text
-        kb = InlineKeyboardMarkup([[InlineKeyboardButton("👑 Back to Admin Panel", callback_data="admin:panel")]])
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📲 Send Test to Me", callback_data="admin:send_test_score_me")],
+            [InlineKeyboardButton("👑 Back to Admin Panel", callback_data="admin:panel")],
+        ])
         await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
 
 
@@ -736,6 +899,141 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"• Total Registered Users: <b>{stats.get('total', 0)}</b>"
     )
     await update.message.reply_text(msg, parse_mode="HTML")
+
+
+async def users_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin command: View all users who ever sent /start."""
+    chat_id = update.effective_chat.id
+    if not is_admin(chat_id):
+        await update.message.reply_text("⛔ You are not authorized to use this command.")
+        return
+
+    all_users = await get_all_subscribers()
+    total = len(all_users)
+    active = sum(1 for u in all_users if u.get("is_active"))
+    inactive = total - active
+
+    header = (
+        f"👥 <b>Registered Users Database</b> (All-Time)\n\n"
+        f"📊 <b>Total Users:</b> <code>{total}</code>\n"
+        f"🟢 <b>Active Subscribers:</b> <code>{active}</code>\n"
+        f"⚪ <b>Inactive/Paused:</b> <code>{inactive}</code>\n"
+        f"🌍 <b>Main Timezone:</b> <code>Asia/Tashkent (UZT, UTC+5)</code>\n\n"
+    )
+
+    if not all_users:
+        await update.message.reply_text(header + "<i>No registered users found in database yet.</i>", parse_mode="HTML")
+        return
+
+    lines = []
+    for i, u in enumerate(all_users[:30], 1):
+        name = u.get("first_name") or "User"
+        username = f"@{u['username']}" if u.get("username") else "No handle"
+        uid = u["chat_id"]
+        tz = u.get("timezone") or "Asia/Tashkent"
+        status = "🟢 Active" if u.get("is_active") else "⚪ Inactive"
+        joined = (u.get("subscribed_at") or "")[:10]
+        lines.append(f"{i}. <b>{name}</b> ({username}) - <code>{uid}</code>\n   🌍 {tz} | 📅 Joined: {joined} | {status}")
+
+    user_list_str = "\n".join(lines)
+    if total > 30:
+        user_list_str += f"\n\n<i>...and {total - 30} more users. Full database export attached below.</i>"
+
+    await update.message.reply_text(header + user_list_str, parse_mode="HTML")
+
+    if total > 20:
+        out = io.StringIO()
+        out.write("====================================================\n")
+        out.write("   SAT NOTIFY BOT - COMPLETE REGISTERED USERS LIST  \n")
+        out.write("====================================================\n")
+        out.write(f"Generated: {datetime.now(ZoneInfo('Asia/Tashkent')).strftime('%Y-%m-%d %H:%M:%S')} Tashkent Time\n")
+        out.write(f"Total Users: {len(all_users)}\n\n")
+        out.write(f"{'#':<4} {'CHAT_ID':<14} {'STATUS':<10} {'TIMEZONE':<18} {'JOINED':<12} {'USERNAME':<18} {'FIRST_NAME'}\n")
+        out.write("-" * 90 + "\n")
+        for i, u in enumerate(all_users, 1):
+            status = "ACTIVE" if u.get("is_active") else "INACTIVE"
+            tz = u.get("timezone") or "Asia/Tashkent"
+            joined = (u.get("subscribed_at") or "")[:10]
+            uname = f"@{u['username']}" if u.get("username") else "N/A"
+            fname = u.get("first_name") or "N/A"
+            out.write(f"{i:<4} {u['chat_id']:<14} {status:<10} {tz:<18} {joined:<12} {uname:<18} {fname}\n")
+        
+        file_bytes = out.getvalue().encode("utf-8")
+        out.close()
+        bio = io.BytesIO(file_bytes)
+        bio.name = f"sat_bot_users_{datetime.now().strftime('%Y%m%d')}.txt"
+        await update.message.reply_document(
+            document=bio,
+            caption=f"📋 Complete user list: {len(all_users)} total subscribers.",
+        )
+
+
+async def test_scores_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin command: /test_scores [me|all] - Send test score release message before score release day."""
+    chat_id = update.effective_chat.id
+    if not is_admin(chat_id):
+        await update.message.reply_text("⛔ You are not authorized to use this command.")
+        return
+
+    mode = context.args[0].lower() if context.args else "me"
+    next_score = get_next_score_release() or {"name": "August 2026 SAT", "score_release_date": date(2026, 9, 4)}
+
+    eve_msg = (
+        "🧪 <b>[Test: 1 Day Before Score Release]</b>\n\n" +
+        TEMPLATES["score_release_1day"].format(
+            test_name=next_score["name"],
+            release_date=next_score["score_release_date"].strftime("%A, %B %d, %Y"),
+        )
+    )
+    morning_msg = (
+        "🧪 <b>[Test: Score Release Day Morning]</b>\n\n" +
+        TEMPLATES["score_release_morning"].format(
+            test_name=next_score["name"],
+            release_date=next_score["score_release_date"].strftime("%A, %B %d, %Y"),
+        )
+    )
+
+    if mode in ("all", "broadcast"):
+        status_msg = await update.message.reply_text("🚀 Broadcasting pre-score-release test alert to all subscribers...", parse_mode="HTML")
+        success, failed = await broadcast_message(context.bot, eve_msg)
+        await status_msg.edit_text(
+            f"✅ <b>Pre-Score Release Alert Broadcasted:</b>\n"
+            f"• Successfully sent: {success}\n"
+            f"• Failed/Inactive: {failed}",
+            parse_mode="HTML",
+        )
+    else:
+        await update.message.reply_text(eve_msg, parse_mode="HTML", disable_web_page_preview=True)
+        await update.message.reply_text(morning_msg, parse_mode="HTML", disable_web_page_preview=True)
+        await update.message.reply_text(
+            "💡 <i>Test messages sent to your private chat. To broadcast to all users, type:</i>\n<code>/test_scores all</code>",
+            parse_mode="HTML",
+        )
+
+
+async def test_score_eve_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin command: /test_eve [me|all] - Send 1-day-before score release notification."""
+    chat_id = update.effective_chat.id
+    if not is_admin(chat_id):
+        await update.message.reply_text("⛔ You are not authorized to use this command.")
+        return
+
+    mode = context.args[0].lower() if context.args else "me"
+    next_score = get_next_score_release() or {"name": "August 2026 SAT", "score_release_date": date(2026, 9, 4)}
+    msg = TEMPLATES["score_release_1day"].format(
+        test_name=next_score["name"],
+        release_date=next_score["score_release_date"].strftime("%A, %B %d, %Y"),
+    )
+
+    if mode in ("all", "broadcast"):
+        status_msg = await update.message.reply_text("🚀 Broadcasting 1-day reminder to all subscribers...", parse_mode="HTML")
+        success, failed = await broadcast_message(context.bot, msg)
+        await status_msg.edit_text(
+            f"✅ <b>Broadcast Complete:</b>\n• Sent: {success}\n• Failed: {failed}",
+            parse_mode="HTML",
+        )
+    else:
+        await update.message.reply_text(f"🧪 <b>[Admin Preview: 1 Day Before Scores]</b>\n\n{msg}", parse_mode="HTML", disable_web_page_preview=True)
 
 
 async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1037,9 +1335,21 @@ async def check_and_send_scheduled_alerts(bot):
                 success, _ = await broadcast_message(bot, msg)
                 await mark_notification_sent(event_key, success)
 
-        # Check Official Score Release Day
+        # Check 1 Day Before Score Release Day (Score Release Eve)
         days_to_scores = (score_date - today).days
-        if days_to_scores == 0:
+        if days_to_scores == 1:
+            event_key = f"{item_id}_score_release_1day"
+            if not await is_notification_sent(event_key):
+                logger.info("Triggering 1-day-before score release reminder for %s", test_name)
+                msg = TEMPLATES["score_release_1day"].format(
+                    test_name=test_name,
+                    release_date=score_date.strftime("%A, %B %d, %Y"),
+                )
+                success, _ = await broadcast_message(bot, msg)
+                await mark_notification_sent(event_key, success)
+
+        # Check Official Score Release Day
+        elif days_to_scores == 0:
             event_key = f"{item_id}_score_release_day"
             if not await is_notification_sent(event_key):
                 logger.info("Triggering Score Release Announcement for %s", test_name)
@@ -1099,8 +1409,14 @@ async def main():
     # Admin Handlers
     application.add_handler(CommandHandler("admin", admin_command))
     application.add_handler(CommandHandler("stats", stats_command))
+    application.add_handler(CommandHandler("users", users_command))
+    application.add_handler(CommandHandler("subscribers", users_command))
     application.add_handler(CommandHandler("broadcast", broadcast_command))
     application.add_handler(CommandHandler("announce_scores", announce_scores_command))
+    application.add_handler(CommandHandler("test_scores", test_scores_command))
+    application.add_handler(CommandHandler("test_score_release", test_scores_command))
+    application.add_handler(CommandHandler("test_eve", test_score_eve_command))
+    application.add_handler(CommandHandler("test_score_eve", test_score_eve_command))
     application.add_handler(CommandHandler("reply", reply_command))
 
     # Inline Button Navigation Router

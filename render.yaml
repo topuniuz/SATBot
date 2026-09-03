@@ -12,6 +12,8 @@ services:
         sync: false
       - key: TIMEZONE
         value: Asia/Tashkent
+      - key: TZ
+        value: Asia/Tashkent
       - key: PORT
         value: 8080
       - key: DATABASE_URL

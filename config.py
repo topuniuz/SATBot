@@ -33,8 +33,10 @@ DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 _default_db_path = "/var/data/sat_bot.db" if os.path.isdir("/var/data") else "sat_bot.db"
 DB_PATH = os.getenv("DB_PATH", _default_db_path)
 
-# Default Timezone: Tashkent, Uzbekistan (UZT, UTC+5)
-TIMEZONE_NAME = os.getenv("TIMEZONE", "Asia/Tashkent")
+# Permanent Main Timezone: Tashkent, Uzbekistan (UZT, UTC+5)
+# Tashkent is the fixed, permanent main timezone for the bot.
+MAIN_TIMEZONE_NAME = "Asia/Tashkent"
+TIMEZONE_NAME = "Asia/Tashkent"
 try:
     TIMEZONE = ZoneInfo(TIMEZONE_NAME)
 except Exception:
@@ -42,7 +44,7 @@ except Exception:
         TIMEZONE = ZoneInfo("Asia/Tashkent")
     except Exception:
         import datetime
-        TIMEZONE = datetime.timezone.utc
+        TIMEZONE = datetime.timezone(datetime.timedelta(hours=5))
 
 # Telegram Custom Emoji IDs (from packs like TgAndroidIcons)
 CUSTOM_EMOJIS = {
@@ -194,7 +196,9 @@ POPULAR_TIMEZONES = [
 
 
 def get_user_zoneinfo(tz_name: str):
-    """Safely returns ZoneInfo for a timezone string, falling back to Asia/Tashkent."""
+    """Safely returns ZoneInfo for a timezone string, falling back to Asia/Tashkent (UTC+5)."""
+    if not tz_name or tz_name in ("US/Eastern", "UTC"):
+        tz_name = "Asia/Tashkent"
     try:
         return ZoneInfo(tz_name)
     except Exception:
@@ -202,7 +206,7 @@ def get_user_zoneinfo(tz_name: str):
             return ZoneInfo("Asia/Tashkent")
         except Exception:
             import datetime
-            return datetime.timezone.utc
+            return datetime.timezone(datetime.timedelta(hours=5))
 
 
 def get_current_date(tz_name: str = None) -> date:
@@ -287,12 +291,25 @@ TEMPLATES = {
         "• Remember: Take deep breaths. If a question is tough, flag it, move on, and return later.\n\n"
         "<b>You've got this! Go crush that score! 🚀💯</b>"
     ),
+    "score_release_1day": (
+        "⚡ <b>SAT SCORES RELEASE TOMORROW!</b> ⚡\n\n"
+        "🎉 College Board will begin releasing scores for the <b>{test_name}</b> tomorrow ({release_date})!\n\n"
+        "⏰ <b>Expected Release Batches (Tashkent Time, UZT):</b>\n"
+        "• 🌅 <b>Batch 1:</b> ~3:00 PM – 5:00 PM UZT (6:00 AM – 8:00 AM ET)\n"
+        "• 🌇 <b>Batch 2:</b> ~3:00 AM – 5:00 AM UZT next day (6:00 PM – 8:00 PM ET)\n\n"
+        "ℹ️ <b>Tips Before Tomorrow:</b>\n"
+        "• Make sure you have your College Board login credentials ready.\n"
+        "• Scores roll out in batches — if your score isn't ready in the afternoon, check the evening batch!\n\n"
+        "🔗 <b>Check Your Score:</b>\n"
+        "👉 <a href='https://studentscores.collegeboard.org/'>College Board Student Score Portal</a>\n\n"
+        "<i>Wishing you the highest scores! You've got this! 🎯💯</i>"
+    ),
     "score_release_morning": (
         "📢 <b>SAT SCORES ARE RELEASING TODAY!</b> 📢\n\n"
         "🎉 College Board is releasing scores for the <b>{test_name}</b> today ({release_date})!\n\n"
-        "ℹ️ <b>Release Batches:</b>\n"
-        "• 🌅 <b>Batch 1:</b> ~6:00 AM – 8:00 AM ET\n"
-        "• 🌇 <b>Batch 2:</b> ~6:00 PM – 8:00 PM ET\n\n"
+        "⏰ <b>Release Batches (Tashkent Time, UZT):</b>\n"
+        "• 🌅 <b>Batch 1:</b> ~3:00 PM – 5:00 PM UZT (6:00 AM – 8:00 AM ET)\n"
+        "• 🌇 <b>Batch 2:</b> ~3:00 AM – 5:00 AM UZT next day (6:00 PM – 8:00 PM ET)\n\n"
         "🔗 <b>Check Your Score:</b>\n"
         "👉 <a href='https://studentscores.collegeboard.org/'>College Board Student Score Portal</a>\n\n"
         "<i>Best of luck on your scores! 🎯💯</i>"

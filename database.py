@@ -15,8 +15,9 @@ DEFAULT_TIMEZONE = "Asia/Tashkent"
 # In-memory timezone cache for instant lookups without DB queries
 _TIMEZONE_CACHE = {}
 
-# Path for snapshot backups (preserves subscriber state across container restarts)
-_BACKUP_PATH = os.path.join(os.path.dirname(DB_PATH) or ".", "subscribers_snapshot.json")
+# Paths for snapshot backups (preserves subscriber state across container restarts and git deployments)
+_DISK_BACKUP_PATH = os.path.join(os.path.dirname(DB_PATH) or ".", "subscribers_snapshot.json")
+_REPO_BACKUP_PATH = os.path.join(os.path.abspath(os.path.dirname(__file__)), "subscribers_snapshot.json")
 
 
 @contextmanager
@@ -41,49 +42,96 @@ def _get_db():
 
 
 def _save_snapshot_sync():
-    """Saves active subscribers to a JSON snapshot file for recovery across ephemeral container restarts."""
+    """Saves active and historical subscribers to JSON snapshot files, merging existing records so no user is ever lost."""
     try:
+        # 1. Load existing records from snapshot files if present
+        existing_map: dict[int, dict] = {}
+        for path in [_DISK_BACKUP_PATH, _REPO_BACKUP_PATH]:
+            if os.path.exists(path):
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        if isinstance(data, list):
+                            for r in data:
+                                if isinstance(r, dict) and "chat_id" in r:
+                                    existing_map[r["chat_id"]] = r
+                except Exception as ex:
+                    logger.debug("Could not read existing snapshot at %s: %s", path, ex)
+
+        # 2. Merge records from current SQLite DB
         with _get_db() as conn:
             cursor = conn.execute("SELECT chat_id, username, first_name, timezone, is_active, subscribed_at, updated_at FROM subscribers")
-            rows = [dict(row) for row in cursor.fetchall()]
+            for row in cursor.fetchall():
+                row_dict = dict(row)
+                cid = row_dict["chat_id"]
+                if cid in existing_map:
+                    # Preserve earliest subscribed_at
+                    old_sub = existing_map[cid].get("subscribed_at")
+                    new_sub = row_dict.get("subscribed_at")
+                    if old_sub and (not new_sub or old_sub < new_sub):
+                        row_dict["subscribed_at"] = old_sub
+                existing_map[cid] = row_dict
 
-        backup_dir = os.path.dirname(_BACKUP_PATH)
-        if backup_dir and not os.path.exists(backup_dir):
-            os.makedirs(backup_dir, exist_ok=True)
+        rows = list(existing_map.values())
 
-        with open(_BACKUP_PATH, "w", encoding="utf-8") as f:
-            json.dump(rows, f, ensure_ascii=False, indent=2)
+        # 3. Write merged list to both disk backup and repo backup
+        for path in {_DISK_BACKUP_PATH, _REPO_BACKUP_PATH}:
+            backup_dir = os.path.dirname(path)
+            if backup_dir and not os.path.exists(backup_dir):
+                os.makedirs(backup_dir, exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(rows, f, ensure_ascii=False, indent=2)
     except Exception as e:
         logger.debug("Failed to write snapshot backup: %s", e)
 
 
-def _restore_snapshot_if_empty_sync():
-    """Restores subscribers from JSON snapshot if the database was recreated empty after a deploy."""
-    if not os.path.exists(_BACKUP_PATH):
+def _restore_snapshot_sync():
+    """Restores/merges subscribers from JSON snapshot into SQLite. Never skips even if DB already has records."""
+    records_map: dict[int, dict] = {}
+    for path in [_DISK_BACKUP_PATH, _REPO_BACKUP_PATH]:
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, list):
+                        for r in data:
+                            if isinstance(r, dict) and "chat_id" in r:
+                                records_map[r["chat_id"]] = r
+            except Exception as e:
+                logger.warning("Error reading snapshot from %s: %s", path, e)
+
+    if not records_map:
         return
 
     try:
         with _get_db() as conn:
-            cursor = conn.execute("SELECT COUNT(*) FROM subscribers")
-            count = cursor.fetchone()[0]
-            if count > 0:
-                return
-
-            with open(_BACKUP_PATH, "r", encoding="utf-8") as f:
-                records = json.load(f)
-
             restored = 0
-            for r in records:
+            for r in records_map.values():
+                tz = r.get("timezone") or DEFAULT_TIMEZONE
+                if tz in ("US/Eastern", "UTC"):
+                    tz = DEFAULT_TIMEZONE
+
                 conn.execute(
-                    """
-                    INSERT OR REPLACE INTO subscribers (chat_id, username, first_name, timezone, is_active, subscribed_at, updated_at)
+                    f"""
+                    INSERT INTO subscribers (chat_id, username, first_name, timezone, is_active, subscribed_at, updated_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(chat_id) DO UPDATE SET
+                        username = coalesce(excluded.username, subscribers.username),
+                        first_name = coalesce(excluded.first_name, subscribers.first_name),
+                        timezone = CASE
+                            WHEN subscribers.timezone IS NULL OR subscribers.timezone = '' OR subscribers.timezone = 'US/Eastern' OR subscribers.timezone = 'UTC'
+                            THEN coalesce(excluded.timezone, '{DEFAULT_TIMEZONE}')
+                            ELSE subscribers.timezone
+                        END,
+                        is_active = max(subscribers.is_active, excluded.is_active),
+                        subscribed_at = coalesce(subscribers.subscribed_at, excluded.subscribed_at),
+                        updated_at = max(coalesce(subscribers.updated_at, ''), coalesce(excluded.updated_at, ''))
                     """,
                     (
                         r["chat_id"],
                         r.get("username"),
                         r.get("first_name"),
-                        r.get("timezone", DEFAULT_TIMEZONE),
+                        tz,
                         r.get("is_active", 1),
                         r.get("subscribed_at"),
                         r.get("updated_at"),
@@ -92,7 +140,7 @@ def _restore_snapshot_if_empty_sync():
                 restored += 1
             conn.commit()
             if restored > 0:
-                logger.info("Successfully restored %d subscribers from snapshot %s", restored, _BACKUP_PATH)
+                logger.info("Successfully merged/restored %d subscribers from snapshots", restored)
     except Exception as e:
         logger.warning("Error restoring subscribers from snapshot: %s", e)
 
@@ -126,11 +174,11 @@ def _init_db_sync():
             );
         """)
         
-        # Migrate any legacy 'US/Eastern' default records to Asia/Tashkent
-        conn.execute(f"UPDATE subscribers SET timezone = '{DEFAULT_TIMEZONE}' WHERE timezone = 'US/Eastern' OR timezone IS NULL;")
+        # Migrate any legacy 'US/Eastern', 'UTC', or blank records to Asia/Tashkent
+        conn.execute(f"UPDATE subscribers SET timezone = '{DEFAULT_TIMEZONE}' WHERE timezone = 'US/Eastern' OR timezone = 'UTC' OR timezone IS NULL OR timezone = '';")
         conn.commit()
 
-    _restore_snapshot_if_empty_sync()
+    _restore_snapshot_sync()
     logger.info("Database initialized with WAL mode at %s (Default Timezone: %s)", DB_PATH, DEFAULT_TIMEZONE)
 
 
@@ -167,6 +215,7 @@ def _add_or_reactivate_subscriber_sync(chat_id: int, username: str | None, first
                 (username, first_name, now, chat_id),
             )
             conn.commit()
+            _save_snapshot_sync()
             return False
 
 
@@ -248,6 +297,19 @@ def _get_active_subscribers_sync() -> list[int]:
 async def get_active_subscribers() -> list[int]:
     """Returns a list of all active chat IDs."""
     return await asyncio.to_thread(_get_active_subscribers_sync)
+
+
+def _get_all_subscribers_sync() -> list[dict]:
+    with _get_db() as conn:
+        cursor = conn.execute(
+            "SELECT chat_id, username, first_name, timezone, is_active, subscribed_at, updated_at FROM subscribers ORDER BY subscribed_at ASC"
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+
+async def get_all_subscribers() -> list[dict]:
+    """Returns a list of all subscribers (both active and inactive) ever registered."""
+    return await asyncio.to_thread(_get_all_subscribers_sync)
 
 
 def _get_subscriber_stats_sync() -> dict:

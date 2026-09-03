@@ -51,6 +51,9 @@
 | Command | Description |
 | :--- | :--- |
 | `/admin` | Open the visual interactive Admin Control Panel |
+| `/users` | View and export all users who ever sent `/start` (all-time database) |
+| `/test_scores [me\|all]` | Send test score release message (privately or broadcast) before release day |
+| `/test_eve [me\|all]` | Send 1-day-before score release reminder notification |
 | `/broadcast <msg>` | Broadcast custom formatted announcement to all subscribers |
 | `/announce_scores` | Instantly trigger score release broadcast for the current SAT |
 | `/reply <user_id> <msg>` | Reply directly to a student's support message |

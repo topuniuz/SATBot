@@ -32,7 +32,6 @@ wheels/
 *.db-shm
 *.db-wal
 *.sqlite3
-subscribers_snapshot.json
 data/
 
 # Logs

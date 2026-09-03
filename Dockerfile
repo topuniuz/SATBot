@@ -5,6 +5,8 @@ WORKDIR /app
 # Prevent Python from writing pyc files and buffering stdout/stderr
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+ENV TZ=Asia/Tashkent
+ENV TIMEZONE=Asia/Tashkent
 
 # Install dependencies
 COPY requirements.txt .

@@ -17,7 +17,9 @@ import web_server
 class TestSATBot(unittest.IsolatedAsyncioTestCase):
 
     async def asyncSetUp(self):
-        for f in ["test_sat_bot.db", "test_sat_bot.db-shm", "test_sat_bot.db-wal", "subscribers_snapshot.json"]:
+        database._DISK_BACKUP_PATH = "test_subscribers_snapshot.json"
+        database._REPO_BACKUP_PATH = "test_subscribers_snapshot.json"
+        for f in ["test_sat_bot.db", "test_sat_bot.db-shm", "test_sat_bot.db-wal", "test_subscribers_snapshot.json"]:
             if os.path.exists(f):
                 try:
                     os.remove(f)
@@ -26,7 +28,7 @@ class TestSATBot(unittest.IsolatedAsyncioTestCase):
         await database.init_db()
 
     async def asyncTearDown(self):
-        for f in ["test_sat_bot.db", "test_sat_bot.db-shm", "test_sat_bot.db-wal", "subscribers_snapshot.json"]:
+        for f in ["test_sat_bot.db", "test_sat_bot.db-shm", "test_sat_bot.db-wal", "test_subscribers_snapshot.json"]:
             if os.path.exists(f):
                 try:
                     os.remove(f)
@@ -139,6 +141,43 @@ class TestSATBot(unittest.IsolatedAsyncioTestCase):
 
         msg_scores = config.TEMPLATES["score_release_morning"].format(**test_data)
         self.assertIn("SCORES ARE RELEASING TODAY", msg_scores)
+        self.assertIn("Tashkent Time", msg_scores)
+
+        msg_scores_1d = config.TEMPLATES["score_release_1day"].format(**test_data)
+        self.assertIn("SCORES RELEASE TOMORROW", msg_scores_1d)
+        self.assertIn("Tashkent Time", msg_scores_1d)
+
+    async def test_get_all_subscribers_and_historical_preservation(self):
+        await database.add_or_reactivate_subscriber(chat_id=2001, username="decade_user", first_name="OldUser")
+        await database.add_or_reactivate_subscriber(chat_id=2002, username="new_user", first_name="NewUser")
+        
+        # Deactivate one user to simulate unsubscription / blocked
+        await database.unsubscribe_user(2001)
+
+        # Active should be 1, but get_all_subscribers must show everyone
+        active = await database.get_active_subscribers()
+        self.assertIn(2002, active)
+        self.assertNotIn(2001, active)
+
+        all_subs = await database.get_all_subscribers()
+        all_ids = [u["chat_id"] for u in all_subs]
+        self.assertIn(2001, all_ids)
+        self.assertIn(2002, all_ids)
+        
+        # User who joined earlier must have their join date and inactive status preserved
+        u2001 = next(u for u in all_subs if u["chat_id"] == 2001)
+        self.assertEqual(u2001["is_active"], 0)
+        self.assertEqual(u2001["timezone"], "Asia/Tashkent")
+        self.assertIsNotNone(u2001["subscribed_at"])
+
+    def test_tashkent_permanent_timezone_lock(self):
+        self.assertEqual(config.MAIN_TIMEZONE_NAME, "Asia/Tashkent")
+        self.assertEqual(config.TIMEZONE_NAME, "Asia/Tashkent")
+        tz = config.get_user_zoneinfo(None)
+        self.assertIn(str(tz), ["Asia/Tashkent", "UTC+05:00"])
+        # Legacy US/Eastern fallback must automatically redirect to Asia/Tashkent
+        legacy_tz = config.get_user_zoneinfo("US/Eastern")
+        self.assertIn(str(legacy_tz), ["Asia/Tashkent", "UTC+05:00"])
 
     async def test_web_server_health_endpoints(self):
         server = await web_server.start_web_server(port=8099)
@@ -187,6 +226,54 @@ class TestSATBot(unittest.IsolatedAsyncioTestCase):
 
         status_text = await bot.get_status_content(1001)
         self.assertIn("Notification Settings", status_text)
+
+    async def test_admin_users_and_test_scores_commands(self):
+        import sys
+        from unittest.mock import MagicMock, AsyncMock
+        if "telegram" not in sys.modules:
+            mock_tg = MagicMock()
+            sys.modules["telegram"] = mock_tg
+            sys.modules["telegram.ext"] = mock_tg
+            sys.modules["telegram.error"] = mock_tg
+        import bot
+
+        # Mock Update and Context
+        update = MagicMock()
+        update.effective_chat.id = 111222333  # Matches ADMIN_USER_ID
+        update.effective_user.id = 111222333
+        update.message.reply_text = AsyncMock()
+        update.message.reply_document = AsyncMock()
+
+        context = MagicMock()
+        context.args = []
+        context.bot.send_message = AsyncMock()
+
+        # Add mock subscribers
+        await database.add_or_reactivate_subscriber(chat_id=9001, username="student_one", first_name="Alice")
+        await database.add_or_reactivate_subscriber(chat_id=9002, username="student_two", first_name="Bob")
+
+        # Test /users command
+        await bot.users_command(update, context)
+        update.message.reply_text.assert_called()
+        call_args = update.message.reply_text.call_args[0][0]
+        self.assertIn("Registered Users Database", call_args)
+        self.assertIn("Alice", call_args)
+        self.assertIn("Bob", call_args)
+        self.assertIn("Asia/Tashkent", call_args)
+
+        # Test /test_scores command (private test preview)
+        update.message.reply_text.reset_mock()
+        await bot.test_scores_command(update, context)
+        self.assertTrue(update.message.reply_text.call_count >= 2)
+        score_preview = update.message.reply_text.call_args_list[0][0][0]
+        self.assertIn("Test: 1 Day Before Score Release", score_preview)
+        self.assertIn("Tashkent Time", score_preview)
+
+        # Test /test_eve command
+        update.message.reply_text.reset_mock()
+        await bot.test_score_eve_command(update, context)
+        eve_call = update.message.reply_text.call_args[0][0]
+        self.assertIn("SCORES RELEASE TOMORROW", eve_call)
 
 
 if __name__ == "__main__":
